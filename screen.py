@@ -104,3 +104,38 @@ def game_hwnd(pid):
 
     u32.EnumWindows(cb, 0)
     return found[0] if found else None
+
+
+class Clicker:
+    """세계 좌표를 클릭해서 게임 길찾기로 이동. 게임 창이 맨 앞일 때만 클릭한다(다른 창 오클릭 방지)."""
+
+    def __init__(self, ue, pid):
+        self.cam = Camera(ue).find()
+        self.hwnd = game_hwnd(pid)
+        self.rect, self.rect_at = None, 0.0
+        self.last = 0.0
+
+    def _safe(self, sx, sy):
+        ox, oy, w, h = self.rect
+        fx, fy = (sx - ox) / w, (sy - oy) / h
+        if not (0.06 < fx < 0.94 and 0.10 < fy < 0.78):
+            return False
+        return not (fx > 0.78 and fy < 0.32)          # 오른쪽 위 미니맵·퀘스트 표시 피하기
+
+    def click_world(self, pt, me, every=0.6):
+        now = time.time()
+        if now - self.last < every:
+            return True
+        if not self.hwnd or u32.GetForegroundWindow() != self.hwnd:
+            return False
+        if not self.rect or now - self.rect_at > 5:
+            self.rect, self.rect_at = client_rect(self.hwnd), now
+        c = self.cam.read()
+        for t in (1.0, 0.8, 0.6, 0.45, 0.3):           # 화면 밖이면 내 쪽으로 당겨서 화면 안 점을 찍음
+            p = tuple(me[i] + (pt[i] - me[i]) * t for i in range(3))
+            sp = project(c, p, self.rect)
+            if sp and self._safe(*sp):
+                click(*sp)
+                self.last = now
+                return True
+        return False

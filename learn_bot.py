@@ -86,7 +86,7 @@ class Learner(Bot):
             if h > 0 and d < SIGHT and abs(mz - z) < ZGAP:
                 foes.append((d, mx - x, my - y, n, o, h, m))
         foes.sort(key=lambda f: f[0])
-        return {"x": x, "y": y, "hp": hp, "hpmax": hpmax, "soul": soul, "potions": potions, "foes": foes, "hps": hps}
+        return {"x": x, "y": y, "z": z, "hp": hp, "hpmax": hpmax, "soul": soul, "potions": potions, "foes": foes, "hps": hps}
 
     def state_key(self, s):
         f = s["foes"]
@@ -123,7 +123,7 @@ class Learner(Bot):
         name = ACTIONS[a]
         if name == "melee":
             if d > MELEE:
-                self.pad.stick(*self.to_stick(dx, dy))
+                self.go(s["x"], s["y"], s.get("z", 0), (s["x"] + dx, s["y"] + dy, s.get("z", 0)), dx, dy)
                 time.sleep(DT)
             else:
                 self.pad.stick(*self.to_stick(dx, dy, 0.25))
@@ -230,6 +230,12 @@ def main():
     pad = Pad()
     ue = uemem.UE(winproc.Process(), rescan=True)
     bot = Learner(ue, pad)
+    try:
+        import screen
+        bot.clicker = screen.Clicker(ue, ue.p.pid)
+        log("클릭 이동 켬(게임 길찾기 사용)")
+    except Exception as e:
+        log("클릭 이동 못 켬, 스틱으로 이동:", e)
     if not bot.r.player:
         log("내 캐릭터를 못 찾았어. 월드에 들어간 상태로 다시 해 줘.")
         return

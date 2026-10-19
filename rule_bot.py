@@ -81,6 +81,10 @@ class Pad:
         self.p.update()
 
 
+def now_ok(bot):
+    return time.time() >= bot.click_off_until
+
+
 class Bot:
     def __init__(self, ue, pad):
         self.ue, self.pad = ue, pad
@@ -104,6 +108,9 @@ class Bot:
         self.press_xy = None          # 마지막으로 왼쪽 스틱을 누른 위치
         self.cur_path, self.cur_i = None, 0
         self.last_arrive = 0.0
+        self.clicker = None           # screen.Clicker(클릭 이동), main에서 켬
+        self.click_off_until = 0.0    # 막혀서 잠깐 스틱으로 바꾼 동안
+        self.moved_by = ""
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -264,8 +271,12 @@ class Bot:
                     self.cur_path, self.cur_i = path, min(i + 1, len(path) - 1) if d0[i] < 450 else i
                 if self.cur_path:
                     path = self.cur_path
-                    while self.cur_i < len(path) - 1 and (math.hypot(path[self.cur_i][0] - x, path[self.cur_i][1] - y) < 250
-                                                          or self._key(path[self.cur_i]) in self.skip):
+                    def passed(j):   # 점 j에 닿았거나, 이미 다음 구간(j→j+1)으로 넘어간 상태
+                        if math.hypot(path[j][0] - x, path[j][1] - y) < 250 or self._key(path[j]) in self.skip:
+                            return True
+                        nx, ny = path[j + 1][0], path[j + 1][1]
+                        return math.hypot(nx - x, ny - y) < math.hypot(nx - path[j][0], ny - path[j][1]) - 50
+                    while self.cur_i < len(path) - 1 and passed(self.cur_i):
                         self.cur_i += 1
                     i = self.cur_i
                     di = math.hypot(path[i][0] - x, path[i][1] - y)
@@ -289,6 +300,7 @@ class Bot:
                         side = 1 if tries % 2 else -1
                         self.detour = (-dy * side, dx * side)
                         self.detour_until = now + 1.2
+                        self.click_off_until = now + 4
                         self.wp_best = (k, di, now, tries)
                         self.pad.tap("A")
                         self.stats["jumps"] += 1
@@ -296,7 +308,7 @@ class Bot:
                         return act
                     act["do"] = "guide"
                     act["wp"] = f"{src or 'keep'} {i}/{len(path)} {round(di)}"
-                    self.pad.stick(*self.to_stick(dx, dy))
+                    self.go(x, y, z, self._ahead(path, i, x, y, z), dx, dy)
                     self._unstick(x, y, now, act)
                     return act
                 if now > self.wander_until:
@@ -304,7 +316,10 @@ class Bot:
                     self.wander, self.wander_until = (math.cos(a), math.sin(a)), now + 6
                 dx, dy = self.wander
                 act["do"] = "wander"
-            self.pad.stick(*self.to_stick(dx, dy))
+            if act["do"] == "seek":
+                self.go(x, y, z, (x + dx, y + dy, z), dx, dy)
+            else:
+                self.pad.stick(*self.to_stick(dx, dy))
             self._unstick(x, y, now, act)
             return act
 
@@ -332,10 +347,34 @@ class Bot:
         if self._chase_stuck(o, x, y, now):
             act["do"] = "unreachable"
             return act
-        self.pad.stick(*self.to_stick(dx, dy))
+        self.go(x, y, z, (x + dx, y + dy, z), dx, dy)
         act["do"] = "walk"
         self._unstick(x, y, now, act)
         return act
+
+    def go(self, x, y, z, target, dx, dy):
+        """이동: 클릭 이동이 되면 게임 길찾기(클릭), 안 되면 스틱으로 직진."""
+        if self.clicker and now_ok(self):
+            self.pad.stick(0, 0)
+            if self.clicker.click_world(target, (x, y, z)):
+                self.moved_by = "click"
+                return
+        self.pad.stick(*self.to_stick(dx, dy))
+        self.moved_by = "stick"
+
+    def _ahead(self, path, i, x, y, z, look=700.0):
+        """경로를 따라 지금 점부터 look만큼 앞의 지점(클릭할 곳)."""
+        px, py, pz = x, y, z
+        left = look
+        for j in range(i, len(path)):
+            qx, qy, qz = path[j]
+            seg = math.hypot(qx - px, qy - py)
+            if seg >= left:
+                t = left / seg if seg else 0
+                return (px + (qx - px) * t, py + (qy - py) * t, pz + (qz - pz) * t)
+            left -= seg
+            px, py, pz = qx, qy, qz
+        return path[-1]
 
     def _chase_stuck(self, o, x, y, now):
         """몹을 쫓는 3초 동안 내가 150도 못 움직였으면(높은 곳·벽 너머) 쫓던 몹들을 25초 무시."""
@@ -387,6 +426,12 @@ def main():
         return
     ue = uemem.UE(winproc.Process(), rescan=True)
     bot = Bot(ue, pad)
+    try:
+        import screen
+        bot.clicker = screen.Clicker(ue, ue.p.pid)
+        log("클릭 이동 켬(게임 길찾기 사용)")
+    except Exception as e:
+        log("클릭 이동 못 켬, 스틱으로 이동:", e)
     if not bot.r.player:
         log("내 캐릭터를 못 찾았어. 월드에 들어간 상태로 다시 해 줘.")
         return
