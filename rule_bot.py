@@ -2,7 +2,8 @@
 
 판단(초당 약 15번):
   - 체력 40% 아래 + 물약 있음 → LT(물약)
-  - 체력 30% 아래 + 몹이 가까움 → 몹 반대쪽으로 구르기(LB)
+  - 체력 30% 아래(몹 4마리 넘게 몰리면 50%) + 몹이 가까움 → 몹 무리 반대쪽으로 구르고 2초 물러남
+  - 몹 4마리 넘게 몰리면 물약도 60%에서 마심
   - 가까운 적 몹이 2마리 넘게 붙어 있고 영혼 충분 → 유물(B, RB)을 번갈아(각 12초 간격)
   - 가장 가까운 적이 근접 거리 안 → X 연타, 멀면 그쪽으로 걷기(1.5초 넘게 안 움직이면 점프)
   - 1.5초 때려도 체력이 안 줄면 그 몹은 20초 무시(죽은 몸·무적 상태)
@@ -97,6 +98,7 @@ class Bot:
         self.wander = (1.0, 0.0)      # 돌아다닐 세계 방향
         self.wander_until = 0.0
         self.last_guide = 0.0
+        self.retreat_until = 0.0
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -194,17 +196,26 @@ class Bot:
         act = {"hp": round(hp), "soul": round(soul), "foes": len(foes), "pos": [round(x), round(y), round(z)]}
         close = [f for f in foes if f[0] < 500]
 
-        if hp / hpmax < 0.4 and potions >= 1 and now - self.last_potion > 2:
+        crowd = len([f for f in foes if f[0] < 600])
+        if now < self.retreat_until and close:        # 물러나는 중: 몹 반대쪽으로 계속 걷기
+            cx = sum(f[1] for f in close) / len(close)
+            cy = sum(f[2] for f in close) / len(close)
+            self.pad.stick(*self.to_stick(-cx, -cy))
+            act["do"] = "retreat"
+            return act
+        if (hp / hpmax < 0.4 or (crowd >= 4 and hp / hpmax < 0.6)) and potions >= 1 and now - self.last_potion > 2:
             self.pad.trigger(left=True)
             self.last_potion = now
             self.stats["potions"] += 1
             act["do"] = "potion"
             return act
-        if hp / hpmax < 0.3 and close and now - self.last_roll > 2.6:
-            d, dx, dy = close[0][:3]
-            self.pad.stick(*self.to_stick(-dx, -dy))
+        if (hp / hpmax < 0.3 or (crowd >= 4 and hp / hpmax < 0.5)) and close and now - self.last_roll > 2.6:
+            cx = sum(f[1] for f in close) / len(close)
+            cy = sum(f[2] for f in close) / len(close)
+            self.pad.stick(*self.to_stick(-cx, -cy))
             self.pad.tap("LEFT_SHOULDER")
             self.last_roll = now
+            self.retreat_until = now + 2.0          # 굴러서 빠진 뒤 2초 더 물러남
             self.stats["rolls"] += 1
             act["do"] = "roll"
             return act
@@ -240,6 +251,8 @@ class Bot:
                 if path:
                     dists = [math.hypot(p[0] - x, p[1] - y) for p in path]
                     i = dists.index(min(dists))
+                    if dists[i] < 450 and i < len(path) - 1:   # 가장 가까운 점 근처면 다음 점으로(뒤로 돌아가지 않게)
+                        i += 1
                     while i < len(path) - 1 and (dists[i] < 250 or self._key(path[i]) in self.skip):
                         i += 1
                     dx, dy = path[i][0] - x, path[i][1] - y
