@@ -81,14 +81,15 @@ def project(cam, p, rect):
 
 
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x2, 0x4
+MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x8, 0x10
 
 
-def click(x, y, hold=0.05):
+def click(x, y, hold=0.05, right=False):
     u32.SetCursorPos(int(x), int(y))
     time.sleep(0.02)
-    u32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    u32.mouse_event(MOUSEEVENTF_RIGHTDOWN if right else MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
     time.sleep(hold)
-    u32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    u32.mouse_event(MOUSEEVENTF_RIGHTUP if right else MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
 
 def game_hwnd(pid):
@@ -139,3 +140,15 @@ class Clicker:
                 self.last = now
                 return True
         return False
+
+    def rclick_world(self, pt):
+        """상호작용(우클릭)을 세계 점 위에. 게임 창이 앞일 때만."""
+        if not self.hwnd or u32.GetForegroundWindow() != self.hwnd:
+            return False
+        if not self.rect:
+            self.rect, self.rect_at = client_rect(self.hwnd), time.time()
+        sp = project(self.cam.read(), pt, self.rect)
+        if not sp or not self._safe(*sp):
+            return False
+        click(*sp, hold=0.08, right=True)
+        return True

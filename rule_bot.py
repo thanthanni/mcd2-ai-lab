@@ -112,6 +112,7 @@ class Bot:
         self.click_off_until = 0.0    # 막혀서 잠깐 스틱으로 바꾼 동안
         self.moved_by = ""
         self.last_guide_ok = 0.0      # 마지막으로 안내 경로를 따라간 시각
+        self.tried = {}               # 퀘스트 대상 → 마지막으로 상호작용해 본 시각
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -131,6 +132,7 @@ class Bot:
                     self.r.player = fresh.player or self.r.player
                     self.r.mobs, self.r.atr = fresh.mobs, fresh.atr
                     self.r.navpaths, self.r.trail, self.r.guides = fresh.navpaths, fresh.trail, fresh.guides
+                    self.r.quest_objs = fresh.quest_objs
             except Exception:
                 pass
 
@@ -320,6 +322,24 @@ class Bot:
                     self.go(x, y, z, self._ahead(path, i, x, y, z), dx, dy)
                     self._unstick(x, y, now, act)
                     return act
+                # 안내선이 없으면(퀘스트 상호작용 구간) 가까운 퀘스트 대상에게 가서 상호작용(우클릭 + A)
+                qa = self._quest_target(x, y, z, now)
+                if qa:
+                    qo, qd, qp = qa
+                    act["target"] = f"{r.quest_objs.get(qo, '?')} {round(qd)}"
+                    if qd > 230:
+                        self.go(x, y, z, qp, qp[0] - x, qp[1] - y)
+                        act["do"] = "to_quest"
+                    else:
+                        self.pad.stick(0, 0)
+                        ok = self.clicker.rclick_world(qp) if self.clicker else False
+                        if not ok:
+                            self.pad.tap("A")
+                        self.tried[qo] = now
+                        self.stats["interacts"] = self.stats.get("interacts", 0) + 1
+                        act["do"] = "interact"
+                    self._unstick(x, y, now, act)
+                    return act
                 if now > self.wander_until:
                     a = math.atan2(self.wander[1], self.wander[0]) + 1.2
                     self.wander, self.wander_until = (math.cos(a), math.sin(a)), now + 6
@@ -384,6 +404,21 @@ class Bot:
             left -= seg
             px, py, pz = qx, qy, qz
         return path[-1]
+
+    def _quest_target(self, x, y, z, now):
+        """4000 안에서 90초 안에 안 건드려 본 가장 가까운 퀘스트 대상 (객체, 거리, 위치)."""
+        best = None
+        for o in list(self.r.quest_objs):
+            if now - self.tried.get(o, 0) < 90:
+                continue
+            try:
+                p = self.r.loc(o)
+            except Exception:
+                continue
+            d = math.hypot(p[0] - x, p[1] - y)
+            if d < 4000 and abs(p[2] - z) < 600 and (not best or d < best[1]):
+                best = (o, d, p)
+        return best
 
     def _chase_stuck(self, o, x, y, now, d=None):
         """몹을 쫓는데 4초 동안 그 몹과의 거리가 150도 안 줄면(벽 너머·높은 곳) 쫓던 몹들을 25초 무시.

@@ -45,6 +45,7 @@ class Reader:
         self.atr = {}        # actor -> {ATR 클래스 이름: 객체}
         self.navpaths = []   # NavigationPath(길 안내선 경로 후보)
         self.trail = None    # BP_PlayerGuidanceTrail_Visual_C
+        self.quest_objs = {} # 퀘스트 상호작용 대상(QuestASCActor: 벌통 자리 같은 것, QuestCharacter: 퀘스트 NPC) → 클래스 이름
         self.guides = []     # GCN_ShowGuidance_C(왼쪽 스틱 누르면 생기는 안내 경로, SplineComponent에 세계 좌표 점)
 
     def _chain(self, c):
@@ -69,7 +70,7 @@ class Reader:
     def scan(self):
         """객체 표를 한 번 훑어서 캐릭터·몹·속성 묶음 목록을 새로 만든다(약 1초)."""
         ue = self.ue
-        player, mobs, npcs, atr, navpaths, trail, guides = None, {}, set(), {}, [], None, []
+        player, mobs, npcs, atr, navpaths, trail, guides, quest = None, {}, set(), {}, [], None, [], {}
         for o in ue.iter_objects():
             try:
                 ch = self._chain(ue.cls(o))
@@ -86,18 +87,22 @@ class Reader:
                 if "GuidanceTrail" in n and not ue.objname(o).startswith("Default__"):
                     trail = o
                     continue
+                if "QuestASCActor" in ch and not ue.objname(o).startswith("Default__"):
+                    quest[o] = n
+                    continue
                 if "Pawn" not in ch or ue.objname(o).startswith("Default__"):
                     continue
                 if "PlayerCharacter" in ch:
                     player = o
                 elif "QuestCharacter" in ch:
                     npcs.add(o)
+                    quest[o] = n
                 elif "MobCharacter" in ch:
                     mobs[o] = n
             except Exception:
                 continue
         self.player, self.mobs, self.npcs, self.atr = player, mobs, npcs, atr
-        self.navpaths, self.trail, self.guides = navpaths, trail, guides
+        self.navpaths, self.trail, self.guides, self.quest_objs = navpaths, trail, guides, quest
 
     def spline(self, comp):
         """SplineComponent.SplineCurves.Position.Points(원소 88바이트: InVal float, OutVal FVector@+8) → 점 목록"""
