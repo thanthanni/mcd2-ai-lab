@@ -87,6 +87,13 @@ def main():
         cam = screen.Camera(ue).find()
     except Exception:
         cam = None
+    try:                      # 지난번에 못 보낸 기록이 있으면 먼저 보냄
+        import uploader
+        k = uploader.send_pending(quiet=True)
+        if k:
+            print(f"지난 기록 {k}개를 보냈어.")
+    except Exception:
+        pass
     print("기록 시작. 평소처럼 플레이해. 게임을 끄면 자동으로 끝나.", flush=True)
     t0 = time.time()
     n_lines, fh, chunk_i, chunk_t = 0, None, 0, 0.0
@@ -179,6 +186,11 @@ def main():
         if fh:
             fh.close()
     print(f"\n기록 끝: {n_lines}줄, {(time.time() - t0) / 60:.1f}분")
+    try:                      # 창을 바로 닫아도 되게, 기록 파일은 여기서 직접 보낸다
+        import uploader
+        print(f"보낸 기록 파일: {uploader.send_pending()}개")
+    except Exception as e:
+        print("보내기 실패:", e)
 
 
 if __name__ == "__main__":
