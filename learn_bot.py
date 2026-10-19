@@ -98,18 +98,21 @@ class Learner(Bot):
         return f"{hpb}{nb}{db}{int(s['soul'] >= 40)}{int(s['potions'] >= 1)}"
 
     def dealt(self, s):
-        """지난번보다 몹 체력이 줄어든 만큼(피해) + 사라졌거나 0이 된 몹(처치)."""
+        """싸우던 몹(가까운 적)만 보고: 체력이 줄어든 만큼 피해, 체력이 0이 되거나
+        체력 35% 아래에서 사라지면 처치. 멀리서 목록에서 빠진 몹은 처치로 안 셈."""
         dmg, kills = 0.0, 0
-        for o, h in s["hps"].items():
+        foes = {f[4]: (f[5], f[6]) for f in s["foes"] if f[0] < 900}
+        for o, (h, m) in foes.items():
             p = self.mob_hp.get(o)
-            if p is not None and h < p:
-                dmg += p - h
-                if h <= 0:
-                    kills += 1
-        for o, p in self.mob_hp.items():
-            if o not in s["hps"] and 0 < p < 15:
+            if p is not None and h < p[0]:
+                dmg += p[0] - h
+        for o, (p, m) in self.mob_hp.items():
+            if o in foes:
+                continue
+            h = s["hps"].get(o)
+            if (h is not None and h <= 0) or (h is None and m and p / m < 0.35):
                 kills += 1
-        self.mob_hp = {o: h for o, h in s["hps"].items() if h > 0}
+        self.mob_hp = {o: hm for o, hm in foes.items() if hm[0] > 0}
         return dmg, kills
 
     def do(self, a, s):
@@ -156,6 +159,10 @@ class Learner(Bot):
             return
         ep["fails"] = 0
         dmg, kills = self.dealt(s)
+        dg = ep.setdefault("diag", {"players": [], "hp_min": 9999, "hp_max": 0, "combat_steps": 0})
+        if self.r.player not in dg["players"]:
+            dg["players"].append(self.r.player)
+        dg["hp_min"], dg["hp_max"] = min(dg["hp_min"], round(s["hp"])), max(dg["hp_max"], round(s["hp"]))
         dead = s["hp"] <= 0
         taken = max(0.0, ep.get("last_hp", s["hp"]) - s["hp"]) if not dead else 0
         ep["last_hp"] = s["hp"] if not dead else ep.get("last_hp", s["hpmax"])
@@ -205,6 +212,7 @@ class Learner(Bot):
         else:
             a = max(range(len(ACTIONS)), key=lambda i: qs[i])
         ep["choices"][ACTIONS[a]] = ep["choices"].get(ACTIONS[a], 0) + 1
+        ep["diag"]["combat_steps"] += 1
         self.do(a, s)
         self.prev = (k, a)
         self.steps_total += 1
@@ -273,7 +281,9 @@ def main():
             rec = {"ep": prior, "time": round(time.time()), "secs": round(time.time() - te),
                    "reward": round(ep["reward"], 1), "dealt": round(ep["dealt"]), "kills": ep["kills"],
                    "taken": round(ep["taken"]), "deaths": ep["deaths"], "eps": round(bot.eps(), 3),
-                   "steps": bot.steps_total, "choices": ep["choices"], "errors": ep.get("errors", {})}
+                   "steps": bot.steps_total, "choices": ep["choices"], "errors": ep.get("errors", {}),
+                   "diag": {k: (len(v) if k == "players" else v) for k, v in ep.get("diag", {}).items()},
+                   "ignored": ep.get("ignored", 0)}
             with open(HIST, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             bot.save()
