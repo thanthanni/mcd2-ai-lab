@@ -101,6 +101,9 @@ class Bot:
         self.last_guide = 0.0
         self.retreat_until = 0.0
         self.chase = None             # (쫓은 몹들, 시작 시각, 그때 내 x, y)
+        self.press_xy = None          # 마지막으로 왼쪽 스틱을 누른 위치
+        self.cur_path, self.cur_i = None, 0
+        self.last_arrive = 0.0
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -241,30 +244,44 @@ class Bot:
                     act["do"] = "unreachable"
                     return act
             else:
+                if now - self.last_guide > 5:          # 안내선 새로 그리기(누른 위치를 기억해서 새 경로를 알아봄)
+                    self.pad.tap("LEFT_THUMB")
+                    self.last_guide = now
+                    self.press_xy = (x, y)
                 path, src = None, None
                 try:
-                    path, src = r.guide_path((x, y))
+                    path, src = r.guide_path((x, y), self.press_xy if now - self.last_guide < 4 else None)
                 except Exception:
                     pass
                 if now < self.detour_until:        # 막혀서 옆으로 돌아가는 중
                     self.pad.stick(*self.to_stick(*self.detour))
                     act["do"] = "detour"
                     return act
-                if now - self.last_guide > 5:          # 안내선 새로 그리기
-                    self.pad.tap("LEFT_THUMB")
-                    self.last_guide = now
-                if path:
-                    dists = [math.hypot(p[0] - x, p[1] - y) for p in path]
-                    i = dists.index(min(dists))
-                    if dists[i] < 450 and i < len(path) - 1:   # 가장 가까운 점 근처면 다음 점으로(뒤로 돌아가지 않게)
-                        i += 1
-                    while i < len(path) - 1 and (dists[i] < 250 or self._key(path[i]) in self.skip):
-                        i += 1
+                if path and (not self.cur_path or path[0] != self.cur_path[0] or len(path) != len(self.cur_path)):
+                    # 새 경로로 갈아탈 때만 위치를 다시 잡고, 그 뒤로는 점 번호를 앞으로만 진행(왔다 갔다 방지)
+                    d0 = [math.hypot(p[0] - x, p[1] - y) for p in path]
+                    i = d0.index(min(d0))
+                    self.cur_path, self.cur_i = path, min(i + 1, len(path) - 1) if d0[i] < 450 else i
+                if self.cur_path:
+                    path = self.cur_path
+                    while self.cur_i < len(path) - 1 and (math.hypot(path[self.cur_i][0] - x, path[self.cur_i][1] - y) < 250
+                                                          or self._key(path[self.cur_i]) in self.skip):
+                        self.cur_i += 1
+                    i = self.cur_i
+                    di = math.hypot(path[i][0] - x, path[i][1] - y)
+                    if i == len(path) - 1 and di < 250:    # 경로 끝(목표) 도착: 상호작용 시도 후 경로 비움
+                        self.pad.stick(0, 0)
+                        if now - self.last_arrive > 1.5:      # 목표 앞에서 1.5초에 한 번만 상호작용 시도
+                            self.pad.tap("X")
+                            self.last_arrive = now
+                        self.cur_path = None
+                        act["do"] = "arrive"
+                        return act
                     dx, dy = path[i][0] - x, path[i][1] - y
                     # 3초 동안 이 점에 100 넘게 못 가까워지면: 옆으로 1.2초 돌아가고, 두 번째면 그 점을 건너뜀
                     k = self._key(path[i])
-                    if not self.wp_best or self.wp_best[0] != k or dists[i] < self.wp_best[1] - 100:
-                        self.wp_best = (k, dists[i], now, self.wp_best[3] if self.wp_best and self.wp_best[0] == k else 0)
+                    if not self.wp_best or self.wp_best[0] != k or di < self.wp_best[1] - 100:
+                        self.wp_best = (k, di, now, self.wp_best[3] if self.wp_best and self.wp_best[0] == k else 0)
                     elif now - self.wp_best[2] > 3:
                         tries = self.wp_best[3] + 1
                         if tries >= 2:
@@ -272,13 +289,13 @@ class Bot:
                         side = 1 if tries % 2 else -1
                         self.detour = (-dy * side, dx * side)
                         self.detour_until = now + 1.2
-                        self.wp_best = (k, dists[i], now, tries)
+                        self.wp_best = (k, di, now, tries)
                         self.pad.tap("A")
                         self.stats["jumps"] += 1
                         act["do"] = "detour"
                         return act
                     act["do"] = "guide"
-                    act["wp"] = f"{src} {i}/{len(path)} {round(dists[i])}"
+                    act["wp"] = f"{src or 'keep'} {i}/{len(path)} {round(di)}"
                     self.pad.stick(*self.to_stick(dx, dy))
                     self._unstick(x, y, now, act)
                     return act

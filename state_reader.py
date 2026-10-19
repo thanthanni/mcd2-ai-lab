@@ -115,37 +115,35 @@ class Reader:
         raw = self.ue.read(data, num * 24)
         return [struct.unpack_from("<ddd", raw, i * 24) for i in range(num)]
 
-    def guide_path(self, me_xy):
-        """내 발밑에서 시작하는 안내 경로(점 목록). 안내선 위치가 있으면 그걸, 없으면 NavigationPath 중 고른다."""
-        cands = []
-        for g in self.guides:                    # 1순위: 게임이 그린 목표까지의 안내 경로
+    def guide_path(self, me_xy, press_xy=None):
+        """게임이 그린 안내 경로(GCN_ShowGuidance 스플라인) 중 하나를 고른다.
+        press_xy(왼쪽 스틱을 누른 위치)가 있으면 그 자리에서 시작하는 경로 = 방금 새로 그린 경로를 고르고,
+        없으면 내 위치에 가장 가까운 경로. 옛 경로·몹 경로(NavigationPath)는 쓰지 않는다."""
+        best, best_d = None, 1e18
+        for g in self.guides:
             try:
                 sp = self.ue.q(g + self._off(g, "SplineComponent"))
                 pts = self.spline(sp) if sp else []
-                if len(pts) >= 2 and min(((p[0] - me_xy[0]) ** 2 + (p[1] - me_xy[1]) ** 2) ** 0.5 for p in pts) < 1500:
-                    return pts, "guide"
             except Exception:
                 continue
+            if len(pts) < 2:
+                continue
+            if press_xy:
+                d = ((pts[0][0] - press_xy[0]) ** 2 + (pts[0][1] - press_xy[1]) ** 2) ** 0.5
+            else:
+                d = min(((p[0] - me_xy[0]) ** 2 + (p[1] - me_xy[1]) ** 2) ** 0.5 for p in pts)
+            if d < best_d:
+                best, best_d = pts, d
+        if best and best_d < (400 if press_xy else 1500):
+            return best, "guide"
         if self.trail:
             try:
                 pts = self.points(self.trail, "GuidanceLinePositions")
                 if len(pts) >= 2 and min(((p[0] - me_xy[0]) ** 2 + (p[1] - me_xy[1]) ** 2) ** 0.5 for p in pts) < 1200:
-                    return pts, "trail"          # 화면에 그려진 안내선이 제일 확실함
+                    return pts, "trail"
             except Exception:
                 pass
-        for o in self.navpaths:
-            try:
-                cands.append(self.points(o, "PathPoints"))
-            except Exception:
-                continue
-        best, best_d = None, 600.0
-        for pts in cands:
-            if len(pts) < 2:
-                continue
-            d = min(((p[0] - me_xy[0]) ** 2 + (p[1] - me_xy[1]) ** 2) ** 0.5 for p in pts[:-1])
-            if d < best_d:
-                best, best_d = pts, d
-        return (best, "nav") if best else (None, None)
+        return None, None
 
     def loc(self, o):
         r = self.ue.q(o + self._off(o, "RootComponent"))
