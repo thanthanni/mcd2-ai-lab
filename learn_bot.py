@@ -197,9 +197,16 @@ class Learner(Bot):
                 self._update(self.prev, reward, None)
                 self.prev = None
             try:
-                super().step()
-            except Exception:
-                pass
+                ra = super().step()
+                dg = ep["diag"]
+                dg.setdefault("nav", {})
+                dg["nav"][ra.get("do", "?")] = dg["nav"].get(ra.get("do", "?"), 0) + 1
+                lp = dg.get("last_xy")
+                if lp:
+                    dg["moved"] = round(dg.get("moved", 0) + math.hypot(s["x"] - lp[0], s["y"] - lp[1]))
+                dg["last_xy"] = (s["x"], s["y"])
+            except Exception as e:
+                ep.setdefault("errors", {})["nav " + str(e)[:60]] = ep.setdefault("errors", {}).get("nav " + str(e)[:60], 0) + 1
             time.sleep(1 / 15)
             return
         d0, o0 = s["foes"][0][0], s["foes"][0][4]
@@ -288,7 +295,7 @@ def main():
                    "reward": round(ep["reward"], 1), "dealt": round(ep["dealt"]), "kills": ep["kills"],
                    "taken": round(ep["taken"]), "deaths": ep["deaths"], "eps": round(bot.eps(), 3),
                    "steps": bot.steps_total, "choices": ep["choices"], "errors": ep.get("errors", {}),
-                   "diag": {k: (len(v) if k == "players" else v) for k, v in ep.get("diag", {}).items()},
+                   "diag": {k: (len(v) if k == "players" else v) for k, v in ep.get("diag", {}).items() if k != "last_xy"},
                    "ignored": ep.get("ignored", 0)}
             with open(HIST, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
