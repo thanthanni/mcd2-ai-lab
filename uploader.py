@@ -28,8 +28,14 @@ def send_pending(patterns=("play_*.jsonl",), quiet=False):
         return 0
     sent = set(open(SENT, encoding="utf-8").read().split()) if os.path.exists(SENT) else set()
     n = 0
+    if not quiet:
+        print("폴더:", HERE)
+        print("이미 보낸 것:", sorted(sent))
     for pat in patterns:
-        for p in sorted(glob.glob(os.path.join(HERE, pat))):
+        found = sorted(glob.glob(os.path.join(glob.escape(HERE), pat)))
+        if not quiet:
+            print(f"{pat}: {len(found)}개 찾음", [os.path.basename(f) for f in found])
+        for p in found:
             name = os.path.basename(p)
             if name in sent or os.path.getsize(p) == 0:
                 continue
