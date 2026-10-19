@@ -154,6 +154,7 @@ class Learner(Bot):
         if s is None:
             time.sleep(0.2)
             return
+        ep["fails"] = 0
         dmg, kills = self.dealt(s)
         dead = s["hp"] <= 0
         taken = max(0.0, ep.get("last_hp", s["hp"]) - s["hp"]) if not dead else 0
@@ -169,8 +170,14 @@ class Learner(Bot):
         if dead:
             self.pad.reset()
             self.prev = None
+            ep.setdefault("dead_since", time.time())
+            if time.time() - ep["dead_since"] > 6:     # 쓰러진 화면이 오래가면 A로 넘기기 + 다시 훑기
+                self.pad.tap("A")
+                self.resync()
+                ep["dead_since"] = time.time() - 4
             time.sleep(0.5)
             return
+        ep.pop("dead_since", None)
         if not s["foes"]:
             # 몹 없을 땐 규칙 봇(안내선 따라가기)에게 맡기고 학습은 쉰다
             if self.prev:
@@ -194,6 +201,14 @@ class Learner(Bot):
         self.do(a, s)
         self.prev = (k, a)
         self.steps_total += 1
+
+    def resync(self):
+        """내 캐릭터가 바뀌었을 수 있으니(부활·로딩) 객체 표를 바로 다시 훑는다."""
+        try:
+            with self.lock:
+                self.r.scan()
+        except Exception:
+            pass
 
     def _update(self, prev, reward, k2):
         k, a = prev
@@ -231,7 +246,13 @@ def main():
             while time.time() - te < EPISODE and time.time() - t0 < SECONDS:
                 try:
                     bot.learn_step(ep)
-                except Exception:
+                except Exception as e:
+                    ep["fails"] = ep.get("fails", 0) + 1
+                    msg = traceback.format_exc(limit=1).strip().splitlines()[-1]
+                    ep.setdefault("errors", {})[msg] = ep.setdefault("errors", {}).get(msg, 0) + 1
+                    if ep["fails"] % 15 == 0:                # 3초 넘게 계속 실패하면 다시 훑기 + A
+                        bot.resync()
+                        pad.tap("A")
                     time.sleep(0.2)
                 print(f"\r판 {prior + 1}  {time.time() - te:5.0f}초  점수 {ep['reward']:7.1f}  처치 {ep['kills']}  "
                       f"받은 피해 {ep['taken']:.0f}  탐험률 {bot.eps():.2f}      ", end="", flush=True)
@@ -239,13 +260,13 @@ def main():
             rec = {"ep": prior, "time": round(time.time()), "secs": round(time.time() - te),
                    "reward": round(ep["reward"], 1), "dealt": round(ep["dealt"]), "kills": ep["kills"],
                    "taken": round(ep["taken"]), "deaths": ep["deaths"], "eps": round(bot.eps(), 3),
-                   "steps": bot.steps_total, "choices": ep["choices"]}
+                   "steps": bot.steps_total, "choices": ep["choices"], "errors": ep.get("errors", {})}
             with open(HIST, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             bot.save()
             print()
             log(f"판 {prior}: 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 고른 행동 {rec['choices']}")
+                f"사망 {rec['deaths']} 고른 행동 {rec['choices']}" + (f" 오류 {rec['errors']}" if rec["errors"] else ""))
     except KeyboardInterrupt:
         pass
     finally:
