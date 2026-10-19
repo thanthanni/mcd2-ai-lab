@@ -6,4 +6,4 @@ echo 오프라인 캐릭터로 월드에 들어가 몹 근처에 있을 때 실�
 .venv\Scripts\python state_probe.py
 echo.
 echo 이 폴더에 생긴 state_probe.txt를 디스코드로 보내 줘.
-pause
+if /i not "%NEXT%"=="%~nx0" pause

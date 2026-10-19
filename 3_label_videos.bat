@@ -10,4 +10,4 @@ setlocal enabledelayedexpansion
 set "LIST="
 for %%f in ("%VID%\*.mp4" "%VID%\*.webm") do set LIST=!LIST! "%%~f"
 .venv\Scripts\python label_videos.py --idm runs\idm\best.pt --out "%VLAB%" !LIST!
-pause
+if /i not "%NEXT%"=="%~nx0" pause

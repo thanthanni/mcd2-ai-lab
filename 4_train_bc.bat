@@ -8,4 +8,4 @@ set "VLAB=data_video"
 if exist E:\ set "VLAB=E:\MCD2-AI\data_video"
 echo [4단계] 네 녹화 + 영상 라벨을 합쳐서 모방학습을 해. 끊겨도 다시 실행하면 이어서 해.
 .venv\Scripts\python train.py --mode bc --data "%DATA%" --data "%VLAB%" --out runs\bc --epochs 20
-pause
+if /i not "%NEXT%"=="%~nx0" pause

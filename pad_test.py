@@ -16,10 +16,9 @@ except Exception as e:
     sys.exit(1)
 
 pad = vg.VX360Gamepad()
-print("가상 패드 연결됨. 5초 안에 게임 창을 클릭해서 앞에 둬.")
-for i in range(5, 0, -1):
-    print(i, flush=True)
-    time.sleep(1)
+import gamewin
+gamewin.focus_game()
+time.sleep(0.5)
 
 print("걷기")
 t0 = time.time()

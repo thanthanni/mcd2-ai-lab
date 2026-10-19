@@ -11,4 +11,4 @@ start /wait "" "%TEMP%\ViGEmBus.exe"
 :run
 .venv\Scripts\python pad_test.py
 echo.
-pause
+if /i not "%NEXT%"=="%~nx0" pause

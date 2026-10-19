@@ -9,7 +9,7 @@
   - 가까운 적이 없으면 멀리(6000까지) 있는 적한테 걸어감
   - 그것도 없으면 길 안내선(왼쪽 스틱 누르기)을 켜고 그 경로를 따라감, 경로가 없으면 돌아다님
 처음에 스틱 방향을 맞추려고 오른쪽·위로 0.6초씩 걸어 본다(넓은 곳에서 시작).
-진짜 패드는 빼고, 오프라인 사본 캐릭터로만. 멈추려면 이 창에서 Ctrl+C.
+진짜 패드가 꽂혀 있으면 뺄 때까지 기다리고, 게임 창은 자동으로 앞으로 가져온다. 오프라인 사본 캐릭터로만. 멈추려면 이 창에서 Ctrl+C.
 """
 from __future__ import annotations
 
@@ -326,6 +326,8 @@ def main():
     sys.path.insert(0, app)
     import winproc  # noqa
     import uemem    # noqa
+    import gamewin
+    gamewin.prepare()
     try:
         pad = Pad()
     except Exception as e:
@@ -336,10 +338,9 @@ def main():
     if not bot.r.player:
         log("내 캐릭터를 못 찾았어. 월드에 들어간 상태로 다시 해 줘.")
         return
-    log("5초 안에 게임 창을 클릭해서 앞에 둬. 멈추려면 이 창에서 Ctrl+C.")
-    for i in range(5, 0, -1):
-        print(i, flush=True)
-        time.sleep(1)
+    log("봇 준비 끝. 멈추려면 이 창에서 Ctrl+C.")
+    gamewin.focus_game()
+    time.sleep(0.5)
     t0 = time.time()
     last_hp, was_dead = None, False
     try:
