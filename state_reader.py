@@ -20,7 +20,7 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "state_reader.txt")
 LOG = os.path.join(HERE, "state_log.jsonl")
-SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 30.0
+SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].replace(".", "", 1).isdigit() else 30.0
 HZ = 10
 lines: list[str] = []
 
