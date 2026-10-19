@@ -57,6 +57,22 @@ def send_pending(patterns=("play_*.jsonl",), quiet=False):
     return n
 
 
+def send_file(name, title="result"):
+    """파일 하나를 바로 보냄(보낸 기록 없이). 성공하면 1."""
+    t = topic()
+    p = os.path.join(HERE, name)
+    if not t or not os.path.exists(p) or os.path.getsize(p) == 0 or os.path.getsize(p) > 14_000_000:
+        return 0
+    req = urllib.request.Request(f"https://ntfy.sh/{t}", data=open(p, "rb").read(), method="PUT",
+                                 headers={"Filename": name, "Title": title})
+    try:
+        urllib.request.urlopen(req, timeout=120).read()
+        return 1
+    except Exception as e:
+        print(f"{name}: 보내기 실패 {e}")
+        return 0
+
+
 if __name__ == "__main__":
     k = send_pending(tuple(sys.argv[1:]) or ("play_*.jsonl",))
     print(f"보낸 파일 {k}개")
