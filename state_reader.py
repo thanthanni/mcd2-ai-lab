@@ -45,6 +45,7 @@ class Reader:
         self.atr = {}        # actor -> {ATR 클래스 이름: 객체}
         self.navpaths = []   # NavigationPath(길 안내선 경로 후보)
         self.trail = None    # BP_PlayerGuidanceTrail_Visual_C
+        self.guides = []     # GCN_ShowGuidance_C(왼쪽 스틱 누르면 생기는 안내 경로, SplineComponent에 세계 좌표 점)
 
     def _chain(self, c):
         r = self.chain.get(c)
@@ -68,7 +69,7 @@ class Reader:
     def scan(self):
         """객체 표를 한 번 훑어서 캐릭터·몹·속성 묶음 목록을 새로 만든다(약 1초)."""
         ue = self.ue
-        player, mobs, npcs, atr, navpaths, trail = None, {}, set(), {}, [], None
+        player, mobs, npcs, atr, navpaths, trail, guides = None, {}, set(), {}, [], None, []
         for o in ue.iter_objects():
             try:
                 ch = self._chain(ue.cls(o))
@@ -78,6 +79,9 @@ class Reader:
                     continue
                 if n == "NavigationPath":
                     navpaths.append(o)
+                    continue
+                if n.startswith("GCN_ShowGuidance") and not ue.objname(o).startswith("Default__"):
+                    guides.append(o)
                     continue
                 if "GuidanceTrail" in n and not ue.objname(o).startswith("Default__"):
                     trail = o
@@ -93,7 +97,15 @@ class Reader:
             except Exception:
                 continue
         self.player, self.mobs, self.npcs, self.atr = player, mobs, npcs, atr
-        self.navpaths, self.trail = navpaths, trail
+        self.navpaths, self.trail, self.guides = navpaths, trail, guides
+
+    def spline(self, comp):
+        """SplineComponent.SplineCurves.Position.Points(원소 88바이트: InVal float, OutVal FVector@+8) → 점 목록"""
+        data, num, mx = struct.unpack("<Qii", self.ue.read(comp + self._off(comp, "SplineCurves"), 16))
+        if not data or num <= 0 or num > 5000 or num > mx:
+            return []
+        raw = self.ue.read(data, num * 88)
+        return [struct.unpack_from("<ddd", raw, i * 88 + 8) for i in range(num)]
 
     def points(self, o, field):
         """TArray<FVector> 필드 → [(x, y, z), ...]"""
@@ -106,6 +118,14 @@ class Reader:
     def guide_path(self, me_xy):
         """내 발밑에서 시작하는 안내 경로(점 목록). 안내선 위치가 있으면 그걸, 없으면 NavigationPath 중 고른다."""
         cands = []
+        for g in self.guides:                    # 1순위: 게임이 그린 목표까지의 안내 경로
+            try:
+                sp = self.ue.q(g + self._off(g, "SplineComponent"))
+                pts = self.spline(sp) if sp else []
+                if len(pts) >= 2 and min(((p[0] - me_xy[0]) ** 2 + (p[1] - me_xy[1]) ** 2) ** 0.5 for p in pts) < 1500:
+                    return pts, "guide"
+            except Exception:
+                continue
         if self.trail:
             try:
                 pts = self.points(self.trail, "GuidanceLinePositions")

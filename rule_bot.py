@@ -115,7 +115,7 @@ class Bot:
                 with self.lock:
                     self.r.player = fresh.player or self.r.player
                     self.r.mobs, self.r.atr = fresh.mobs, fresh.atr
-                    self.r.navpaths, self.r.trail = fresh.navpaths, fresh.trail
+                    self.r.navpaths, self.r.trail, self.r.guides = fresh.navpaths, fresh.trail, fresh.guides
             except Exception:
                 pass
 
