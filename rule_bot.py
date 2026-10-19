@@ -104,7 +104,7 @@ class Bot:
         self.wander_until = 0.0
         self.last_guide = 0.0
         self.retreat_until = 0.0
-        self.chase = None             # (쫓은 몹들, 시작 시각, 그때 내 x, y)
+        self.chase = None             # (쫓은 몹들, 시작 시각, 그때 가장 가까웠던 거리)
         self.press_xy = None          # 마지막으로 왼쪽 스틱을 누른 위치
         self.cur_path, self.cur_i = None, 0
         self.last_arrive = 0.0
@@ -247,7 +247,7 @@ class Bot:
                 d, dx, dy, n, o = far[0]
                 act["target"] = f"{n} {round(d)}"
                 act["do"] = "seek"
-                if self._chase_stuck(o, x, y, now):
+                if self._chase_stuck(o, x, y, now, d):
                     act["do"] = "unreachable"
                     return act
             else:
@@ -344,7 +344,7 @@ class Bot:
             act["do"] = "melee"
             return act
         self.hit = None
-        if self._chase_stuck(o, x, y, now):
+        if self._chase_stuck(o, x, y, now, d):
             act["do"] = "unreachable"
             return act
         self.go(x, y, z, (x + dx, y + dy, z), dx, dy)
@@ -376,13 +376,15 @@ class Bot:
             px, py, pz = qx, qy, qz
         return path[-1]
 
-    def _chase_stuck(self, o, x, y, now):
-        """몹을 쫓는 3초 동안 내가 150도 못 움직였으면(높은 곳·벽 너머) 쫓던 몹들을 25초 무시."""
-        # 몹을 바꿔도 타이머를 이어 감: 내 위치 기준으로 3초 제자리면 그동안 쫓은 몹을 전부 포기
-        if not self.chase or math.hypot(x - self.chase[2], y - self.chase[3]) > 150:
-            self.chase = (set(), now, x, y)
+    def _chase_stuck(self, o, x, y, now, d=None):
+        """몹을 쫓는데 4초 동안 그 몹과의 거리가 150도 안 줄면(벽 너머·높은 곳) 쫓던 몹들을 25초 무시.
+        클릭 이동은 길을 돌아가느라 내가 움직이기는 해서, 내 위치가 아니라 '가까워졌는지'로 본다."""
+        if d is None:
+            d = 0.0
+        if not self.chase or d < self.chase[2] - 150:
+            self.chase = (set(), now, d)
         self.chase[0].add(o)
-        if now - self.chase[1] > 3:
+        if now - self.chase[1] > 4:
             for m in self.chase[0]:
                 self.ignore[m] = now + 25
                 self.seen.pop(m, None)
