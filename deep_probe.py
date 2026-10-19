@@ -100,13 +100,18 @@ def main():
                 log(f"{prefix}{name}: {leaf(fa, p)}")
                 budget[0] -= 1
 
-    for cname in sys.argv[1:]:
+    for arg in sys.argv[1:]:
+        # "클래스:개수:줄수" 형식(기본 3개, 400줄). UObject 기본 칸(+0x28 앞)은 건너뜀
+        parts = arg.split(":")
+        cname = parts[0]
+        nobj = int(parts[1]) if len(parts) > 1 else 3
+        nline = int(parts[2]) if len(parts) > 2 else 400
         objs = ue.find_instances(cname)
         log(f"\n##### {cname}: {len(objs)}개")
-        for o in objs[:3]:
+        for o in objs[:nobj]:
             log(f"\n== {cname} {ue.objname(o)}")
             try:
-                dump(o, ue.cls(o), 0, "  ", [400])
+                dump(o, ue.cls(o), 0, "  ", [nline])
             except Exception:
                 log("  읽기 실패:", traceback.format_exc(limit=1).strip().splitlines()[-1])
 
