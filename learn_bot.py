@@ -189,6 +189,13 @@ class Learner(Bot):
                 pass
             time.sleep(1 / 15)
             return
+        d0, o0 = s["foes"][0][0], s["foes"][0][4]
+        if d0 > MELEE and self._chase_stuck(o0, s["x"], s["y"], time.time(), d0):
+            ep["ignored"] = ep.get("ignored", 0) + 1     # 벽 너머·높은 곳 몹은 포기(학습에 안 넣음)
+            self.prev = None
+            return
+        if d0 <= MELEE:
+            self.chase = None
         k = self.state_key(s)
         qs = self.q.setdefault(k, [0.0] * len(ACTIONS))
         if self.prev:
