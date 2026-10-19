@@ -101,7 +101,7 @@ def main():
     try:
         while True:
             tick = time.time()
-            if not ue.alive():
+            if not proc.alive() or not ue.alive():      # 게임이 꺼지면 끝(프로세스 종료 코드로 확인)
                 break
             if fh is None or tick - chunk_t > CHUNK:
                 if fh:
