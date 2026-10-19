@@ -292,9 +292,15 @@ class Bot:
                     di = math.hypot(path[i][0] - x, path[i][1] - y)
                     if i == len(path) - 1 and di < 250:    # 경로 끝(목표) 도착: 상호작용 시도 후 경로 비움
                         self.pad.stick(0, 0)
-                        if now - self.last_arrive > 1.5:      # 목표 앞에서 1.5초에 한 번만 상호작용 시도
-                            self.pad.tap("X")
+                        if now - self.last_arrive > 1.5:      # 목표 앞: 공격(X)이 아니라 상호작용(우클릭/A)
+                            qa = self._quest_target(x, y, z, now - 1000)   # 90초 규칙 무시하고 가장 가까운 대상
+                            ok = False
+                            if qa and qa[1] < 600 and self.clicker:
+                                ok = self.clicker.rclick_world(qa[2])
+                            if not ok:
+                                self.pad.tap("A")
                             self.last_arrive = now
+                            self.stats["interacts"] = self.stats.get("interacts", 0) + 1
                         self.cur_path = None
                         act["do"] = "arrive"
                         return act
@@ -409,7 +415,7 @@ class Bot:
         """4000 안에서 90초 안에 안 건드려 본 가장 가까운 퀘스트 대상 (객체, 거리, 위치)."""
         best = None
         for o in list(self.r.quest_objs):
-            if now - self.tried.get(o, 0) < 90:
+            if now - self.tried.get(o, -1e9) < 90:
                 continue
             try:
                 p = self.r.loc(o)
