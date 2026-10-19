@@ -7,6 +7,7 @@
   - 가까운 적 몹이 2마리 넘게 붙어 있고 영혼 충분 → 유물(B, RB)을 번갈아(각 12초 간격)
   - 가장 가까운 적이 근접 거리 안 → X 연타, 멀면 그쪽으로 걷기(1.5초 넘게 안 움직이면 점프)
   - 1.5초 때려도 체력이 안 줄면 그 몹은 20초 무시(죽은 몸·무적 상태)
+  - 3초 쫓아가도 내가 제자리면(높은 곳·벽 너머 몹) 그 몹은 25초 무시
   - 가까운 적이 없으면 멀리(6000까지) 있는 적한테 걸어감
   - 그것도 없으면 길 안내선(왼쪽 스틱 누르기)을 켜고 그 경로를 따라감, 경로가 없으면 돌아다님
 처음에 스틱 방향을 맞추려고 오른쪽·위로 0.6초씩 걸어 본다(넓은 곳에서 시작).
@@ -39,7 +40,7 @@ PASSIVE = ("Frog", "Sheep", "Cow", "Pig", "Chicken", "Villager", "Wolf", "Cat", 
 MELEE = 230          # 이 거리 안이면 때림(게임 근접 사거리 300)
 SIGHT = 1800         # 싸울 상대로 보는 거리
 SEEK = 6000          # 싸울 상대가 없을 때 찾아가는 거리
-ZGAP = 350           # 높이 차가 이보다 크면 다른 층으로 봄
+ZGAP = 250           # 높이 차가 이보다 크면 다른 층으로 봄
 lines: list[str] = []
 
 
@@ -99,6 +100,7 @@ class Bot:
         self.wander_until = 0.0
         self.last_guide = 0.0
         self.retreat_until = 0.0
+        self.chase = None             # (쫓는 몹, 시작 시각, 그때 내 x, y)
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -183,8 +185,8 @@ class Bot:
             if d < SIGHT and abs(mz - z) < ZGAP:
                 foes.append((d, mx - x, my - y, n, o, h, m))
                 self.seen[o] = (h, m, d)
-            elif d < SEEK:
-                far.append((d, mx - x, my - y, n))
+            elif d < SEEK and abs(mz - z) < ZGAP * 2:
+                far.append((d, mx - x, my - y, n, o))
         foes.sort(key=lambda f: f[0])
         alive = {f[4] for f in foes}
         for o in list(self.seen):
@@ -232,9 +234,12 @@ class Bot:
             self.hit = None
             if far:
                 far.sort()
-                d, dx, dy, n = far[0]
+                d, dx, dy, n, o = far[0]
                 act["target"] = f"{n} {round(d)}"
                 act["do"] = "seek"
+                if self._chase_stuck(o, x, y, now):
+                    act["do"] = "unreachable"
+                    return act
             else:
                 path, src = None, None
                 try:
@@ -307,10 +312,28 @@ class Bot:
             act["do"] = "melee"
             return act
         self.hit = None
+        if self._chase_stuck(o, x, y, now):
+            act["do"] = "unreachable"
+            return act
         self.pad.stick(*self.to_stick(dx, dy))
         act["do"] = "walk"
         self._unstick(x, y, now, act)
         return act
+
+    def _chase_stuck(self, o, x, y, now):
+        """같은 몹을 3초 쫓았는데 내가 150도 못 움직였으면(높은 곳·벽 너머) 그 몹을 25초 무시."""
+        if not self.chase or self.chase[0] != o:
+            self.chase = (o, now, x, y)
+            return False
+        if math.hypot(x - self.chase[2], y - self.chase[3]) > 150:
+            self.chase = (o, now, x, y)
+            return False
+        if now - self.chase[1] > 3:
+            self.ignore[o] = now + 25
+            self.seen.pop(o, None)
+            self.chase = None
+            return True
+        return False
 
     @staticmethod
     def _key(p):
