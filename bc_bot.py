@@ -60,6 +60,44 @@ class BCBot(Bot):
         self.rt_on = False
         self.still_since = None
         self.counts = {}
+        self.ev = {"dealt": 0.0, "taken": 0.0, "kills": 0, "deaths": 0}
+        self.mob_hp = {}
+        self.my_hp = None
+        self.was_dead = False
+
+    def score(self, row):
+        """평가: 가까운 적(900)에게 준 피해·처치, 내가 받은 피해·죽음."""
+        hp = row["me"]["hp"][0]
+        if self.my_hp is not None and 0 < hp < self.my_hp:
+            self.ev["taken"] += self.my_hp - hp
+        dead = hp <= 0
+        if dead and not self.was_dead:
+            self.ev["deaths"] += 1
+        self.was_dead = dead
+        self.my_hp = hp
+        cur = {}
+        with self.lock:
+            mobs = dict(self.r.mobs)
+        for o, n in mobs.items():
+            if any(p in n for p in PASSIVE):
+                continue
+            try:
+                h, m = self.r.hp(o)
+                mx, my, _ = self.r.loc(o)
+            except Exception:
+                continue
+            if h is not None and math.hypot(mx - row["me"]["p"][0], my - row["me"]["p"][1]) < 900:
+                cur[o] = (h, m)
+        for o, (h, m) in cur.items():
+            p = self.mob_hp.get(o)
+            if p and h < p[0]:
+                self.ev["dealt"] += p[0] - h
+                if h <= 0:
+                    self.ev["kills"] += 1
+        for o, (p, m) in self.mob_hp.items():
+            if o not in cur and m and p / m < 0.35:
+                self.ev["kills"] += 1
+        self.mob_hp = {o: hm for o, hm in cur.items() if hm[0] > 0}
 
     def row(self):
         """play_recorder.py와 같은 모양의 상태 한 줄."""
@@ -116,6 +154,7 @@ class BCBot(Bot):
     def bc_step(self):
         now = time.time()
         row, (x, y, z) = self.row()
+        self.score(row)
         if row["me"]["hp"][0] <= 0:
             self.pad.reset()
             return {"dead": True}
@@ -208,7 +247,10 @@ def main():
         bot.stop = True
         pad.reset()
     print()
-    log(f"[결과] {time.time() - t0:.0f}초, 누가 조종했나 {by}, 신경망이 누른 버튼 {bot.counts}, 규칙 봇 기록 {bot.stats}")
+    ev = {k: round(v) if isinstance(v, float) else v for k, v in bot.ev.items()}
+    log(f"[결과] {time.time() - t0:.0f}초, 누가 조종했나 {by}, 신경망이 누른 버튼 {bot.counts}")
+    log(f"[성적] 준 피해 {ev['dealt']}, 처치 {ev['kills']}, 받은 피해 {ev['taken']}, 사망 {ev['deaths']}")
+    log(f"[규칙 봇 기록] {bot.stats}")
 
 
 if __name__ == "__main__":

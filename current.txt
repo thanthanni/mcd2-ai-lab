@@ -1,1 +1,1 @@
-22_bc_bot.bat
+23_compare.bat
