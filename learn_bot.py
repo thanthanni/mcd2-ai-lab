@@ -68,6 +68,9 @@ class Learner(Bot):
         hp, hpmax = r.hp(me)
         if hp is None or not hpmax:
             return None
+        if self.prev_hp is not None and hp < self.prev_hp - 0.5:
+            self.hurt_until = now + 5
+        self.prev_hp = hp
         soul = r.attr(me, "ATR_Soul", "Souls") or 0
         potions = r.attr(me, "ATR_Health", "HealthPotionCharges") or 0
         foes, hps = [], {}
@@ -83,9 +86,9 @@ class Learner(Bot):
                 continue
             hps[o] = h
             d = math.hypot(mx - x, my - y)
-            if d > 350:
+            if d > 350 and now > self.hurt_until:
                 try:
-                    if r.render_age(o) > 0.5:      # 벽 너머·화면 밖
+                    if r.render_age(o) > 0.5:      # 벽 너머·화면 밖(맞는 중이면 안 거름)
                         continue
                 except Exception:
                     pass

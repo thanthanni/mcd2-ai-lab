@@ -114,6 +114,10 @@ class Bot:
         self.last_guide_ok = 0.0      # 마지막으로 안내 경로를 따라간 시각
         self.tried = {}               # 퀘스트 대상 → 마지막으로 상호작용해 본 시각
         self.last_track = 0.0         # 마지막으로 퀘스트 추적 버튼을 누른 시각
+        self.done_end, self.done_at = None, 0.0   # 방금 도착한 안내선 끝
+        self.quest_go = None          # (가는 중인 퀘스트 대상, 출발 시각)
+        self.hurt_until = 0.0
+        self.prev_hp = None
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -183,6 +187,9 @@ class Bot:
         if hp <= 0:
             self.pad.reset()
             return {"dead": True}
+        if self.prev_hp is not None and hp < self.prev_hp - 0.5:
+            self.hurt_until = now + 5                # 맞았는데 적이 안 보이면: 5초 동안 가려진 몹도 적으로 봄
+        self.prev_hp = hp
 
         foes, far = [], []
         for o, n in mobs.items():
@@ -196,7 +203,7 @@ class Bot:
             d = math.hypot(mx - x, my - y)
             if h is None or h <= 0:
                 continue
-            if d > 350:                      # 벽 너머(붉은 형체)·화면 밖 몹은 무시: 0.5초 넘게 화면에 안 그려짐
+            if d > 350 and now > self.hurt_until:   # 벽 너머(붉은 형체)·화면 밖 몹은 무시(맞는 중이면 끔)
                 try:
                     if r.render_age(o) > 0.5:
                         self.stats["hidden"] = self.stats.get("hidden", 0) + 1
@@ -275,6 +282,9 @@ class Bot:
                     self.pad.stick(*self.to_stick(*self.detour))
                     act["do"] = "detour"
                     return act
+                if path and self.done_end and math.hypot(path[-1][0] - self.done_end[0], path[-1][1] - self.done_end[1]) < 300 \
+                        and now - self.done_at < 30:
+                    path = None                      # 방금 도착한 목표로 가는 옛 경로는 30초 동안 안 씀
                 if path and (not self.cur_path or path[0] != self.cur_path[0] or len(path) != len(self.cur_path)):
                     # 새 경로로 갈아탈 때만 위치를 다시 잡고, 그 뒤로는 점 번호를 앞으로만 진행(왔다 갔다 방지)
                     d0 = [math.hypot(p[0] - x, p[1] - y) for p in path]
@@ -302,6 +312,7 @@ class Bot:
                                 self.pad.tap("A")
                             self.last_arrive = now
                             self.stats["interacts"] = self.stats.get("interacts", 0) + 1
+                        self.done_end, self.done_at = path[-1], now
                         self.cur_path = None
                         act["do"] = "arrive"
                         return act
@@ -346,7 +357,13 @@ class Bot:
                 if qa:
                     qo, qd, qp = qa
                     act["target"] = f"{r.quest_objs.get(qo, '?')} {round(qd)}"
-                    if qd > 230:
+                    if self.quest_go is None or self.quest_go[0] != qo:
+                        self.quest_go = (qo, now)
+                    if qd > 230 and now - self.quest_go[1] > 20:   # 20초 안에 못 가면 포기(90초)
+                        self.tried[qo] = now
+                        self.quest_go = None
+                        act["do"] = "quest_giveup"
+                    elif qd > 230:
                         self.go(x, y, z, qp, qp[0] - x, qp[1] - y)
                         act["do"] = "to_quest"
                     else:
@@ -435,7 +452,7 @@ class Bot:
             except Exception:
                 continue
             d = math.hypot(p[0] - x, p[1] - y)
-            if d < 4000 and abs(p[2] - z) < 600 and (not best or d < best[1]):
+            if d < 2500 and abs(p[2] - z) < 600 and (not best or d < best[1]):
                 best = (o, d, p)
         return best
 
