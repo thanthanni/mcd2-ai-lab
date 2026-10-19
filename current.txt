@@ -1,1 +1,1 @@
-15_learn_bot.bat
+16_click_probe.bat
