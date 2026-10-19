@@ -145,6 +145,15 @@ class Reader:
                 pass
         return None, None
 
+    RENDER_OFF = 0x32c   # 몸통(Mesh) 부품의 LastRenderTimeOnScreen(occlusion_probe로 찾음, 0x328은 LastRenderTime)
+
+    def render_age(self, o):
+        """이 캐릭터가 화면에 마지막으로 그려진 뒤 지난 시간(초). 벽에 가려지거나 화면 밖이면 커진다."""
+        ue = self.ue
+        me_mesh = ue.q(self.player + self._off(self.player, "Mesh"))
+        mesh = ue.q(o + self._off(o, "Mesh"))
+        return ue.f32(me_mesh + self.RENDER_OFF) - ue.f32(mesh + self.RENDER_OFF)
+
     def loc(self, o):
         r = self.ue.q(o + self._off(o, "RootComponent"))
         return struct.unpack("<ddd", self.ue.read(r + self._off(r, "RelativeLocation"), 24))

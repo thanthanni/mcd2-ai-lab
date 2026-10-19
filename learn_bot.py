@@ -83,6 +83,12 @@ class Learner(Bot):
                 continue
             hps[o] = h
             d = math.hypot(mx - x, my - y)
+            if d > 350:
+                try:
+                    if r.render_age(o) > 0.5:      # 벽 너머·화면 밖
+                        continue
+                except Exception:
+                    pass
             if h > 0 and d < SIGHT and abs(mz - z) < ZGAP:
                 foes.append((d, mx - x, my - y, n, o, h, m))
         foes.sort(key=lambda f: f[0])

@@ -38,7 +38,7 @@ PASSIVE = ("Frog", "Sheep", "Cow", "Pig", "Chicken", "Villager", "Wolf", "Cat", 
            "Squid", "Dolphin", "Mooshroom", "Ocelot", "Panda", "Sniffer", "Strider", "Donkey", "Mule",
            "TargetDummy", "Dummy")   # 동물·허수아비는 안 때림
 MELEE = 230          # 이 거리 안이면 때림(게임 근접 사거리 300)
-SIGHT = 800          # 싸울 상대로 보는 거리(멀리 벽 너머 몹에 끌려가지 않게 좁힘, 어그로 끌린 몹은 알아서 다가옴)
+SIGHT = 1300         # 싸울 상대로 보는 거리(벽 너머 몹은 화면에 그려졌는지로 따로 거름)
 SEEK = 6000          # 싸울 상대가 없을 때 찾아가는 거리
 ZGAP = 250           # 높이 차가 이보다 크면 다른 층으로 봄
 lines: list[str] = []
@@ -193,6 +193,13 @@ class Bot:
             d = math.hypot(mx - x, my - y)
             if h is None or h <= 0:
                 continue
+            if d > 350:                      # 벽 너머(붉은 형체)·화면 밖 몹은 무시: 0.5초 넘게 화면에 안 그려짐
+                try:
+                    if r.render_age(o) > 0.5:
+                        self.stats["hidden"] = self.stats.get("hidden", 0) + 1
+                        continue
+                except Exception:
+                    pass
             if d < SIGHT and abs(mz - z) < ZGAP:
                 foes.append((d, mx - x, my - y, n, o, h, m))
                 self.seen[o] = (h, m, d)
