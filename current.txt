@@ -1,1 +1,1 @@
-23_compare.bat
+24_marker_and_compare.bat
