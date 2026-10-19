@@ -38,7 +38,7 @@ PASSIVE = ("Frog", "Sheep", "Cow", "Pig", "Chicken", "Villager", "Wolf", "Cat", 
            "Squid", "Dolphin", "Mooshroom", "Ocelot", "Panda", "Sniffer", "Strider", "Donkey", "Mule",
            "TargetDummy", "Dummy")   # 동물·허수아비는 안 때림
 MELEE = 230          # 이 거리 안이면 때림(게임 근접 사거리 300)
-SIGHT = 1800         # 싸울 상대로 보는 거리
+SIGHT = 800          # 싸울 상대로 보는 거리(멀리 벽 너머 몹에 끌려가지 않게 좁힘, 어그로 끌린 몹은 알아서 다가옴)
 SEEK = 6000          # 싸울 상대가 없을 때 찾아가는 거리
 ZGAP = 250           # 높이 차가 이보다 크면 다른 층으로 봄
 lines: list[str] = []
@@ -111,6 +111,7 @@ class Bot:
         self.clicker = None           # screen.Clicker(클릭 이동), main에서 켬
         self.click_off_until = 0.0    # 막혀서 잠깐 스틱으로 바꾼 동안
         self.moved_by = ""
+        self.last_guide_ok = 0.0      # 마지막으로 안내 경로를 따라간 시각
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -242,7 +243,7 @@ class Bot:
                     return act
         if not foes:
             self.hit = None
-            if far:
+            if far and now - self.last_guide_ok > 8:   # 안내 경로가 있으면 먼 몹은 찾아가지 않음
                 far.sort()
                 d, dx, dy, n, o = far[0]
                 act["target"] = f"{n} {round(d)}"
@@ -306,6 +307,7 @@ class Bot:
                         self.stats["jumps"] += 1
                         act["do"] = "detour"
                         return act
+                    self.last_guide_ok = now
                     act["do"] = "guide"
                     act["wp"] = f"{src or 'keep'} {i}/{len(path)} {round(di)}"
                     self.go(x, y, z, self._ahead(path, i, x, y, z), dx, dy)
@@ -386,7 +388,7 @@ class Bot:
         self.chase[0].add(o)
         if now - self.chase[1] > 4:
             for m in self.chase[0]:
-                self.ignore[m] = now + 25
+                self.ignore[m] = now + 60
                 self.seen.pop(m, None)
             self.chase = None
             return True
