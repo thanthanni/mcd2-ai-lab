@@ -100,7 +100,7 @@ class Bot:
         self.wander_until = 0.0
         self.last_guide = 0.0
         self.retreat_until = 0.0
-        self.chase = None             # (쫓는 몹, 시작 시각, 그때 내 x, y)
+        self.chase = None             # (쫓은 몹들, 시작 시각, 그때 내 x, y)
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -321,16 +321,15 @@ class Bot:
         return act
 
     def _chase_stuck(self, o, x, y, now):
-        """같은 몹을 3초 쫓았는데 내가 150도 못 움직였으면(높은 곳·벽 너머) 그 몹을 25초 무시."""
-        if not self.chase or self.chase[0] != o:
-            self.chase = (o, now, x, y)
-            return False
-        if math.hypot(x - self.chase[2], y - self.chase[3]) > 150:
-            self.chase = (o, now, x, y)
-            return False
+        """몹을 쫓는 3초 동안 내가 150도 못 움직였으면(높은 곳·벽 너머) 쫓던 몹들을 25초 무시."""
+        # 몹을 바꿔도 타이머를 이어 감: 내 위치 기준으로 3초 제자리면 그동안 쫓은 몹을 전부 포기
+        if not self.chase or math.hypot(x - self.chase[2], y - self.chase[3]) > 150:
+            self.chase = (set(), now, x, y)
+        self.chase[0].add(o)
         if now - self.chase[1] > 3:
-            self.ignore[o] = now + 25
-            self.seen.pop(o, None)
+            for m in self.chase[0]:
+                self.ignore[m] = now + 25
+                self.seen.pop(m, None)
             self.chase = None
             return True
         return False
