@@ -113,6 +113,7 @@ class Bot:
         self.moved_by = ""
         self.last_guide_ok = 0.0      # 마지막으로 안내 경로를 따라간 시각
         self.tried = {}               # 퀘스트 대상 → 마지막으로 상호작용해 본 시각
+        self.last_track = 0.0         # 마지막으로 퀘스트 추적 버튼을 누른 시각
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -327,6 +328,18 @@ class Bot:
                     act["wp"] = f"{src or 'keep'} {i}/{len(path)} {round(di)}"
                     self.go(x, y, z, self._ahead(path, i, x, y, z), dx, dy)
                     self._unstick(x, y, now, act)
+                    return act
+                # 안내선이 10초 넘게 없으면 퀘스트 추적(십자키 오른쪽 길게, PC는 J 길게) → 다음 안내선이 생김
+                if now - self.last_guide_ok > 10 and now - self.last_track > 20:
+                    self.pad.stick(0, 0)
+                    self.pad.tap("DPAD_RIGHT", hold=1.2)
+                    time.sleep(0.6)
+                    self.pad.tap("LEFT_THUMB")
+                    self.last_guide = now
+                    self.press_xy = (x, y)
+                    self.last_track = now
+                    self.stats["track"] = self.stats.get("track", 0) + 1
+                    act["do"] = "track_quest"
                     return act
                 # 안내선이 없으면(퀘스트 상호작용 구간) 가까운 퀘스트 대상에게 가서 상호작용(우클릭 + A)
                 qa = self._quest_target(x, y, z, now)
