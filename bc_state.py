@@ -13,7 +13,6 @@ import math
 import sys
 
 import numpy as np
-from sklearn.neural_network import MLPClassifier
 
 BTN = {"X": 0x4000, "A": 0x1000, "LB": 0x100, "B": 0x2000, "RB": 0x200, "Y": 0x8000, "L3": 0x40}
 HOLD = {"RT": 6, "LT": 5}            # pad 배열 위치(트리거 > 0.5면 누름)
@@ -102,6 +101,7 @@ def export(clf, path_key, out):
 
 
 def main():
+    from sklearn.neural_network import MLPClassifier
     paths = sys.argv[1:]
     X, M, B = load(paths)
     n = len(X)
