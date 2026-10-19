@@ -32,6 +32,7 @@ SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 120.0
 OUT = os.path.join(HERE, "bot_result.txt")
 LOG = os.path.join(HERE, "bot_log.jsonl")
 CALIB = os.path.join(HERE, "calib.json")
+JUMPS = os.path.join(HERE, "jump_spots.json")   # 떨어졌던 자리(다음엔 점프해서 건넘), 판이 지나도 남음
 
 PASSIVE = ("Frog", "Sheep", "Cow", "Pig", "Chicken", "Villager", "Wolf", "Cat", "Rabbit", "Horse",
            "Llama", "Fox", "Bee", "Turtle", "Parrot", "Goat", "Axolotl", "Camel", "Armadillo", "Allay",
@@ -118,6 +119,9 @@ class Bot:
         self.quest_go = None          # (가는 중인 퀘스트 대상, 출발 시각)
         self.hurt_until = 0.0
         self.prev_hp = None
+        self.trace = []               # 최근 2초 (시각, x, y, z)
+        self.last_fall = self.last_jump = 0.0
+        self.jump_spots = json.load(open(JUMPS)) if os.path.exists(JUMPS) else []
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -190,6 +194,7 @@ class Bot:
         if self.prev_hp is not None and hp < self.prev_hp - 0.5:
             self.hurt_until = now + 5                # 맞았는데 적이 안 보이면: 5초 동안 가려진 몹도 적으로 봄
         self.prev_hp = hp
+        self._watch_fall(x, y, z, now, act_hint=bool(mobs))
 
         foes, far = [], []
         for o, n in mobs.items():
@@ -337,6 +342,16 @@ class Bot:
                     self.last_guide_ok = now
                     act["do"] = "guide"
                     act["wp"] = f"{src or 'keep'} {i}/{len(path)} {round(di)}"
+                    js = self._jump_spot(x, y, dx, dy)
+                    if js:                         # 전에 떨어졌던 자리: 스틱으로 달리면서 점프해서 건너감
+                        self.click_off_until = now + 1.5
+                        self.pad.stick(*self.to_stick(dx, dy))
+                        if now - self.last_jump > 1.0:
+                            self.pad.tap("A")
+                            self.last_jump = now
+                            self.stats["gap_jumps"] = self.stats.get("gap_jumps", 0) + 1
+                        act["do"] = "gap_jump"
+                        return act
                     self.go(x, y, z, self._ahead(path, i, x, y, z), dx, dy)
                     self._unstick(x, y, now, act)
                     return act
@@ -440,6 +455,45 @@ class Bot:
             left -= seg
             px, py, pz = qx, qy, qz
         return path[-1]
+
+    def _watch_fall(self, x, y, z, now, act_hint=False):
+        """떨어짐 감지: 1.5초 안에 높이가 250 넘게 내려가거나, 0.5초 만에 800 넘게 순간이동(물·낭떠러지 후 되살림).
+        떨어지기 직전 자리와 가던 방향을 jump_spots.json에 저장 → 다음에 그 자리에서 그 방향이면 점프."""
+        self.trace.append((now, x, y, z))
+        while self.trace and now - self.trace[0][0] > 2.0:
+            self.trace.pop(0)
+        if now - self.last_fall < 3 or len(self.trace) < 5:
+            return
+        old = [p for p in self.trace if now - p[0] > 1.2]
+        if not old:
+            return
+        t0, x0, y0, z0 = old[-1]
+        prev = self.trace[-2]
+        jumped = math.hypot(x - prev[1], y - prev[2]) > 800 and now - prev[0] < 0.5
+        if z0 - z > 250 or jumped:
+            # 떨어지기 시작한 곳(가장 높았던 마지막 점) = 낭떠러지 끝, 그 0.4초 전부터의 방향 = 가던 방향
+            top = max(range(len(self.trace) - 1), key=lambda k: (self.trace[k][3], k))
+            ex, ey = self.trace[top][1], self.trace[top][2]
+            back = [p for p in self.trace[:top + 1] if self.trace[top][0] - p[0] >= 0.4] or [self.trace[0]]
+            hx, hy = ex - back[-1][1], ey - back[-1][2]
+            n = math.hypot(hx, hy)
+            if n > 30:
+                hx, hy = hx / n, hy / n
+                # 끝에서 120 앞(안쪽)에서 뛰도록 그 자리를 저장
+                self.jump_spots.append((round(ex - hx * 120), round(ey - hy * 120), round(hx, 2), round(hy, 2)))
+                self.stats["falls"] = self.stats.get("falls", 0) + 1
+                try:
+                    json.dump(self.jump_spots[-300:], open(JUMPS, "w"))
+                except Exception:
+                    pass
+            self.last_fall = now
+
+    def _jump_spot(self, x, y, dx, dy):
+        n = math.hypot(dx, dy) or 1
+        for sx, sy, hx, hy in self.jump_spots:
+            if math.hypot(x - sx, y - sy) < 150 and (dx * hx + dy * hy) / n > 0.5:
+                return True
+        return False
 
     def _quest_target(self, x, y, z, now):
         """4000 안에서 90초 안에 안 건드려 본 가장 가까운 퀘스트 대상 (객체, 거리, 위치)."""
