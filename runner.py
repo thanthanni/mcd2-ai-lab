@@ -137,7 +137,8 @@ def main():
     if job:
         import gamewin
         idle = cursor_idle_seconds()
-        if idle < IDLE_NEEDED or gamewin.pads_connected():
+        quick = "probe" in job[1]                        # 읽기만 하는 탐색 작업은 조작을 안 하니 바로 실행
+        if not quick and (idle < IDLE_NEEDED or gamewin.pads_connected()):
             print(f"[자동 실행] 작업 {job[1]} 대기 중: PC를 쓰는 중이라(마우스 {idle:.0f}초 전에 움직임, "
                   f"패드 {'켜짐' if gamewin.pads_connected() else '꺼짐'}) 3분 안 쓰고 패드 끄면 시작", flush=True)
             if game_running() and not recorder_alive():
