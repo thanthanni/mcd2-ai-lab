@@ -1,6 +1,7 @@
 """자동 반복 실행기: job.txt(저장소에서 받음)에 새 작업이 있으면 실행하고 결과를 보낸다.
 
-job.txt 한 줄: "<작업번호> <bat 이름> [반복 횟수]"  예) 20261019-1600 15_learn_bot.bat 3
+job.txt 한 줄: "<작업번호> <bat 이름> [반복 횟수] [daily]"  예) 20261019-1600 28_ppo.bat 6 daily
+daily면 날짜가 바뀔 때마다 다시 한다(하루 한 번).
 이미 한 작업번호(last_job.txt)면 아무것도 안 한다. 0_loop.bat이 1분마다 최신 파일을 받고 이걸 부른다.
 """
 from __future__ import annotations
@@ -25,6 +26,8 @@ def main():
         return
     jid, bat = job[0], job[1]
     reps = int(job[2]) if len(job) > 2 else 1
+    if len(job) > 3 and job[3] == "daily":           # 매일 한 번씩 다시 하는 작업: 날짜를 붙여서 하루 한 번
+        jid = f"{jid}@{time.strftime('%Y%m%d')}"
     last = open(LAST, encoding="utf-8").read().strip() if os.path.exists(LAST) else ""
     if jid == last:
         return
