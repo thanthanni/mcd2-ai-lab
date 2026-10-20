@@ -32,6 +32,22 @@ def update():
                 f.write(body)
 
 
+def ensure_packages():
+    """봇에 필요한 패키지가 빠져 있으면(.venv를 새로 만든 경우 등) uv로 설치."""
+    import importlib.util
+    import subprocess
+    need = [p for p in ("vgamepad", "numpy", "torch") if importlib.util.find_spec(p) is None]
+    if not need:
+        return
+    uv = os.path.join(os.path.expanduser("~"), ".local", "bin", "uv.exe")
+    print(f"[자동 실행] 빠진 패키지 설치: {need}", flush=True)
+    for p in need:
+        args = [uv, "pip", "install", "--python", os.path.join(HERE, ".venv"), p]
+        if p == "torch":
+            args += ["--index-url", "https://download.pytorch.org/whl/cu128"]
+        subprocess.run(args, cwd=HERE)
+
+
 def main():
     sys.path.insert(0, HERE)
     import runner
@@ -45,6 +61,7 @@ def main():
         update()
     except Exception as e:
         print("[자동 실행] 최신 파일 받기 실패(지난 파일로 계속):", e, flush=True)
+    ensure_packages()
     import importlib
     importlib.reload(runner)                   # 방금 받은 runner로 실행
     runner.main()

@@ -6,7 +6,7 @@ where uv >nul 2>nul || powershell -NoProfile -ExecutionPolicy Bypass -Command "i
 set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 uv venv --python 3.12 .venv || goto fail
 uv pip install --python .venv torch --index-url https://download.pytorch.org/whl/cu128 || goto fail
-uv pip install --python .venv numpy imageio-ffmpeg yt-dlp || goto fail
+uv pip install --python .venv numpy imageio-ffmpeg yt-dlp vgamepad || goto fail
 .venv\Scripts\python -c "import torch;print('그래픽카드:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else '못 찾음(CPU로 돌아감)')"
 echo 준비 끝.
 pause
