@@ -59,11 +59,15 @@ class AC(nn.Module):
         return self.pi(h), self.v(h).squeeze(-1)
 
 
-def bc_pretrain(net, dev):
-    """장훈이 플레이 기록으로 처음 흉내(정책 머리만). 기록이 없으면 건너뜀."""
+DEMO = None   # (관찰, 행동) 텐서: 장훈이 플레이 기록
+
+
+def load_demos(dev):
+    """play_*.jsonl → (X, Y) 텐서. 강화학습 중에도 '장훈이처럼 하기' 손실로 계속 섞어 쓴다."""
+    global DEMO
     paths = sorted(glob.glob(os.path.join(glob.escape(HERE), "play_*.jsonl")))
     if not paths:
-        return 0
+        return None
     X, M, B = bc_state.load(paths, featfn=kfeat.feats)
     outs = bc_state.OUTS                  # X A LB B RB Y L3 RT LT
     idx = {n: i for i, n in enumerate(outs)}
@@ -84,8 +88,16 @@ def bc_pretrain(net, dev):
         else:
             k = 0
         acts.append(int(m) * len(BUTTONS) + k)
-    X = torch.tensor(X, device=dev)
-    Y = torch.tensor(acts, device=dev)
+    DEMO = (torch.tensor(X, device=dev), torch.tensor(acts, device=dev))
+    return DEMO
+
+
+def bc_pretrain(net, dev):
+    """장훈이 플레이 기록으로 처음 흉내. 기록이 없으면 건너뜀."""
+    d = DEMO or load_demos(dev)
+    if not d:
+        return 0
+    X, Y = d
     opt = torch.optim.Adam(net.parameters(), lr=1e-3)
     for it in range(600):
         i = torch.randint(0, len(X), (256,), device=dev)
@@ -221,6 +233,10 @@ def main():
         log(f"이어서 학습: 지금까지 {total}걸음")
     else:
         bc_pretrain(net, dev)
+    if DEMO is None:
+        load_demos(dev)
+    if DEMO is not None:
+        log(f"모방 손실도 같이 씀: 기록 {len(DEMO[0])}장면")
     log(f"강화학습 시작({SECONDS:.0f}초, {dev}). 멈추려면 Ctrl+C.")
     try:
         train_loop(agent, net, opt, dev, SECONDS, total)
@@ -316,6 +332,10 @@ def train_loop(agent, net, opt, dev, seconds, total):
                     vl = ((v - Tret[i]) ** 2).mean()
                     ent = dist.entropy().mean()
                     loss = pl + 0.5 * vl - 0.01 * ent
+                    if DEMO is not None:                  # 장훈이처럼 하기(모방) 손실을 계속 섞음
+                        w = max(0.1, 1.0 - total / 200_000)
+                        j = torch.randint(0, len(DEMO[0]), (128,), device=dev)
+                        loss = loss + w * nn.functional.cross_entropy(net(DEMO[0][j])[0], DEMO[1][j])
                     opt.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(net.parameters(), 0.5)
