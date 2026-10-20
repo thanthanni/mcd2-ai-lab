@@ -72,8 +72,9 @@ def cursor_idle_seconds():
 
 
 def profile_mode():
-    """게임이 지금 쓰는 프로필: 'offline'(OfflinePlayerServiceImpl 있음) / 'online' / None(모름).
-    10-20 탐색: 온라인 로그인 중엔 OnlinePlayerServiceImpl만 1개, OfflinePlayerServiceImpl 0개."""
+    """지금 월드에 들어간 영웅이 오프라인 영웅인지: 'offline' / 'online' / None(모름).
+    PlayerState.ActiveCharacterId → SaveGames\\Character<id>.sav가 있고 "IsOnline":false면 오프라인 영웅.
+    (오프라인 모드에서도 OnlinePlayerServiceImpl이 쓰여서 그걸로는 구별이 안 됨, 10-20 확인)"""
     try:
         from state_probe import find_ohs_app
         app = find_ohs_app()
@@ -83,13 +84,22 @@ def profile_mode():
         import winproc
         import uemem
         ue = uemem.UE(winproc.Process(), rescan=True)
-        if ue.find_instances("OfflinePlayerServiceImpl"):
-            return "offline"
-        if ue.find_instances("OnlinePlayerServiceImpl"):
-            return "online"
+        cid = ""
+        for pc in ue.find_instances("PlayerController"):
+            ps = ue.q(pc + ue.field(pc, "PlayerState").offset)
+            if ps and "ActiveCharacterId" in ue.oprops(ps):
+                cid = ue.fstring(ps + ue.field(ps, "ActiveCharacterId").offset)
+                if cid:
+                    break
+        if not cid:
+            return None
+        save = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Dungeons2", "Saved", "SaveGames", f"Character{cid}.sav")
+        if not os.path.exists(save):
+            return "online"                              # 서버에만 있는 영웅
+        head = open(save, "rb").read().decode("utf-8", "ignore")
+        return "offline" if '"IsOnline":false' in head.replace(" ", "") else "online"
     except Exception:
         return None
-    return None
 
 
 def game_running():
