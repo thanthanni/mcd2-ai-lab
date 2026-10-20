@@ -19,7 +19,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RECPID = os.path.join(HERE, "recorder.pid")
-SKIP = {"current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
+SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
 IDLE_NEEDED = 300
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
 ANTICHEAT = ["valorant-win64-shipping.exe", "valorant.exe", "league of legends.exe", "leagueclient.exe",
@@ -48,6 +48,27 @@ def idle_seconds():
     li.cbSize = ctypes.sizeof(LII)
     ctypes.windll.user32.GetLastInputInfo(ctypes.byref(li))
     return (ctypes.windll.kernel32.GetTickCount() - li.dwTime) / 1000.0
+
+
+IDLE_FILE = os.path.join(HERE, "idle_state.txt")
+
+
+def cursor_idle_seconds():
+    """마우스 커서가 마지막으로 움직인 뒤 지난 시간(1분마다 확인). GetLastInputInfo는 다른 프로그램이 보내는
+    가짜 입력에도 초기화돼서(장훈 PC에서 50초마다 초기화됨) 커서 위치로 본다."""
+    pt = wt.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    now = time.time()
+    try:
+        x, y, t = open(IDLE_FILE).read().split()
+        x, y, t = int(x), int(y), float(t)
+    except (OSError, ValueError):
+        x, y, t = None, None, now
+    if (pt.x, pt.y) != (x, y):
+        t = now
+    with open(IDLE_FILE, "w") as f:
+        f.write(f"{pt.x} {pt.y} {t}")
+    return now - t
 
 
 def game_running():
@@ -115,9 +136,9 @@ def main():
         return                                           # 마던2가 꺼져 있으면(딴 게임 중 등) 아무것도 안 함
     if job:
         import gamewin
-        idle = idle_seconds()
+        idle = cursor_idle_seconds()
         if idle < IDLE_NEEDED or gamewin.pads_connected():
-            print(f"[자동 실행] 작업 {job[1]} 대기 중: PC를 쓰는 중이라(키보드·마우스 {idle:.0f}초 전 사용, "
+            print(f"[자동 실행] 작업 {job[1]} 대기 중: PC를 쓰는 중이라(마우스 {idle:.0f}초 전에 움직임, "
                   f"패드 {'켜짐' if gamewin.pads_connected() else '꺼짐'}) 5분 안 쓰고 패드 끄면 시작", flush=True)
             if game_running() and not recorder_alive():
                 start_recorder()

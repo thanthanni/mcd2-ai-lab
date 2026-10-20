@@ -11,7 +11,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = "https://codeload.github.com/thanthanni/mcd2-ai-lab/zip/refs/heads/main"
-KEEP = {"0_auto.bat", "0_loop.bat", "last_job.txt", "sent.txt", "recorder.pid"}   # PC에만 있는 파일은 안 덮음
+KEEP = {"0_auto.bat", "0_loop.bat", "last_job.txt", "sent.txt", "recorder.pid", "idle_state.txt"}   # PC에만 있는 파일은 안 덮음
 
 
 def update():
