@@ -87,6 +87,8 @@ def pending_job():
 def main():
     sys.path.insert(0, HERE)
     job = pending_job()
+    if job and not game_running():
+        return                                           # 마던2가 꺼져 있으면(딴 게임 중 등) 아무것도 안 함
     if job:
         import gamewin
         idle = idle_seconds()
