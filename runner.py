@@ -21,6 +21,24 @@ LAST = os.path.join(HERE, "last_job.txt")
 RECPID = os.path.join(HERE, "recorder.pid")
 SKIP = {"current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
 IDLE_NEEDED = 300
+# 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
+ANTICHEAT = ["valorant-win64-shipping.exe", "valorant.exe", "league of legends.exe", "leagueclient.exe",
+             "leagueclientux.exe", "riotclientservices.exe", "easyanticheat.exe", "easyanticheat_eos.exe",
+             "beservice.exe", "beservice_x64.exe", "faceit.exe", "faceitclient.exe", "cs2.exe", "overwatch.exe",
+             "r5apex.exe", "fortniteclient-win64-shipping.exe", "tslgame.exe", "lostark.exe", "blackdesert64.exe",
+             "gamemon.des", "gamemon64.des", "xxd-0.xem", "x3.xem", "eldenring.exe", "destiny2.exe",
+             "rainbowsix.exe", "pubg.exe", "fc_online.exe", "maplestory.exe", "dnf.exe", "sa.exe", "eternalreturn.exe"]
+
+
+def running_names():
+    out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True, errors="ignore").stdout
+    return {line.split('","')[0].strip('"').lower() for line in out.splitlines() if line}
+
+
+def anticheat_running(names=None):
+    names = names if names is not None else running_names()
+    hit = [n for n in ANTICHEAT if n in names]
+    return hit[0] if hit else None
 
 
 def idle_seconds():
@@ -86,6 +104,12 @@ def pending_job():
 
 def main():
     sys.path.insert(0, HERE)
+    ac = anticheat_running()
+    if ac:                                               # 안티치트 게임 중: 기록기 끄고 쉼
+        if recorder_alive():
+            stop_recorder()
+        print(f"[자동 실행] {ac} 실행 중이라 쉬는 중(꺼지면 다시 시작)", flush=True)
+        return
     job = pending_job()
     if job and not game_running():
         return                                           # 마던2가 꺼져 있으면(딴 게임 중 등) 아무것도 안 함
@@ -107,16 +131,25 @@ def main():
             print(f"[자동 실행] 작업 {jid} {bat} ({k + 1}/{reps})", flush=True)
             t0 = time.time()
             env = dict(os.environ, NEXT=bat)
-            subprocess.run(["cmd", "/c", bat], cwd=HERE, env=env)
+            p = subprocess.Popen(["cmd", "/c", bat], cwd=HERE, env=env)
+            stopped = None
+            import gamewin
+            while p.poll() is None:                           # 감시: 안티치트 게임이 켜지거나 패드가 켜지면 봇을 바로 끔
+                time.sleep(5)
+                ac = anticheat_running()
+                if ac or gamewin.pads_connected():
+                    stopped = ac or "패드 켜짐"
+                    subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+                    print(f"[자동 실행] {stopped} → 봇을 멈췄어", flush=True)
+                    break
             names = [os.path.basename(p) for p in glob.glob(os.path.join(glob.escape(HERE), "*.txt")) +
                      glob.glob(os.path.join(glob.escape(HERE), "*.jsonl"))
                      if os.path.getmtime(p) > t0 and os.path.basename(p) not in SKIP
                      and not os.path.basename(p).startswith("play_")]
             n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
             print(f"[자동 실행] 결과 {n}개 보냄", flush=True)
-            import gamewin
-            if gamewin.pads_connected():                      # 장훈이가 패드를 켜면(돌아와서 플레이) 남은 반복은 그만
-                print("[자동 실행] 패드가 켜져서 남은 반복은 멈춤", flush=True)
+            if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만
+                print("[자동 실행] 남은 반복은 멈춤", flush=True)
                 break
         return
     if game_running() and not recorder_alive():
