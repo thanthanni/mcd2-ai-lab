@@ -3,7 +3,7 @@
 
 job.txt 한 줄: "<작업번호> <bat 이름> [반복 횟수] [daily]"  예) 20261019-1600 28_ppo.bat 6 daily
 daily면 날짜가 바뀔 때마다 다시 한다(하루 한 번).
-봇 작업은 장훈이가 PC를 안 쓸 때만 시작한다: 키보드·마우스 5분 넘게 안 만졌고 진짜 패드가 꺼져 있을 때.
+봇 작업은 장훈이가 PC를 안 쓸 때만 시작한다: 마우스를 3분 넘게 안 움직였고 진짜 패드가 꺼져 있을 때.
 0_loop.bat이 1분마다 최신 파일을 받고 이걸 부른다.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RECPID = os.path.join(HERE, "recorder.pid")
 SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
-IDLE_NEEDED = 300
+IDLE_NEEDED = 180
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
 ANTICHEAT = ["valorant-win64-shipping.exe", "valorant.exe", "league of legends.exe", "leagueclient.exe",
              "leagueclientux.exe", "riotclientservices.exe", "easyanticheat.exe", "easyanticheat_eos.exe",
@@ -139,7 +139,7 @@ def main():
         idle = cursor_idle_seconds()
         if idle < IDLE_NEEDED or gamewin.pads_connected():
             print(f"[자동 실행] 작업 {job[1]} 대기 중: PC를 쓰는 중이라(마우스 {idle:.0f}초 전에 움직임, "
-                  f"패드 {'켜짐' if gamewin.pads_connected() else '꺼짐'}) 5분 안 쓰고 패드 끄면 시작", flush=True)
+                  f"패드 {'켜짐' if gamewin.pads_connected() else '꺼짐'}) 3분 안 쓰고 패드 끄면 시작", flush=True)
             if game_running() and not recorder_alive():
                 start_recorder()
             return
