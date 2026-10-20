@@ -187,12 +187,13 @@ class Agent(Bot):
     def knowledge_mask(self, row):
         """게임 지식으로 '지금 의미 없는 버튼'을 막는다(무엇을 할지는 신경망이 정함).
         물약: 남아 있고 체력 85% 아래일 때만 / 유물: 영혼 40 넘고 보이는 적이 900 안에 있을 때만 /
-        구르기: 구르기 횟수 남았을 때만 / 활: 화살 있을 때만 / 근접: 600 안에 적이 있을 때만."""
+        구르기: 구르기 횟수 남았을 때만 / 활: 화살 있고 1300 안에 보이는 적이 있을 때만 / 근접: 600 안에 적이 있을 때만."""
         me = row["me"]
         hp, hpm = me["hp"]
         foes = [f for f in row["foes"] if not any(p in f[6] for p in PASSIVE) and (f[7] is None or f[7] < 0.5 or f[0] < 350)]
         ok = {"none": True, "X": any(f[0] < 600 for f in foes), "A": True,
-              "LB": (me.get("roll") or 0) >= 1, "RT": (me.get("ammo") or 0) >= 1,
+              "LB": (me.get("roll") or 0) >= 1,
+              "RT": (me.get("ammo") or 0) >= 1 and any(f[0] < 1300 for f in foes),   # 활: 보이는 적이 있을 때만
               "ART": (me.get("soul") or 0) >= 40 and any(f[0] < 900 for f in foes),
               "LT": (me.get("pot") or 0) >= 1 and hpm > 0 and hp / hpm < 0.85}
         m = np.zeros(NA, dtype=bool)
