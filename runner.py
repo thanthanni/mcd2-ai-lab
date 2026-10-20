@@ -22,8 +22,8 @@ RECPID = os.path.join(HERE, "recorder.pid")
 SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
 IDLE_NEEDED = 180
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
-ANTICHEAT = ["valorant-win64-shipping.exe", "valorant.exe", "league of legends.exe", "leagueclient.exe",
-             "leagueclientux.exe", "riotclientservices.exe", "easyanticheat.exe", "easyanticheat_eos.exe",
+# 런처(라이엇 클라이언트·롤 클라이언트처럼 늘 켜져 있을 수 있는 것)는 빼고, 실제 게임 화면 프로세스만 본다.
+ANTICHEAT = ["valorant-win64-shipping.exe", "league of legends.exe", "easyanticheat.exe", "easyanticheat_eos.exe",
              "beservice.exe", "beservice_x64.exe", "faceit.exe", "faceitclient.exe", "cs2.exe", "overwatch.exe",
              "r5apex.exe", "fortniteclient-win64-shipping.exe", "tslgame.exe", "lostark.exe", "blackdesert64.exe",
              "gamemon.des", "gamemon64.des", "xxd-0.xem", "x3.xem", "eldenring.exe", "destiny2.exe",
