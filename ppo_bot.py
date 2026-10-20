@@ -112,6 +112,7 @@ class Agent(Bot):
         self.rt_on = False
         self.last_tap = 0.0
         self.dead_since = None
+        self.mask = np.ones(NA, dtype=bool)
 
     def goal_dist(self, row):
         g = row.get("guide") or []
@@ -162,7 +163,25 @@ class Agent(Bot):
             self.visited.add(cell)
             r += 0.3
         obs = np.array(bc_state.feats(row), dtype=np.float32)
+        self.mask = self.knowledge_mask(row)
         return obs, r, dead, d
+
+    def knowledge_mask(self, row):
+        """게임 지식으로 '지금 의미 없는 버튼'을 막는다(무엇을 할지는 신경망이 정함).
+        물약: 남아 있고 체력 85% 아래일 때만 / 유물: 영혼 40 넘고 보이는 적이 900 안에 있을 때만 /
+        구르기: 구르기 횟수 남았을 때만 / 활: 화살 있을 때만 / 근접: 600 안에 적이 있을 때만."""
+        me = row["me"]
+        hp, hpm = me["hp"]
+        foes = [f for f in row["foes"] if not any(p in f[6] for p in PASSIVE) and (f[7] is None or f[7] < 0.5 or f[0] < 350)]
+        ok = {"none": True, "X": any(f[0] < 600 for f in foes), "A": True,
+              "LB": (me.get("roll") or 0) >= 1, "RT": (me.get("ammo") or 0) >= 1,
+              "ART": (me.get("soul") or 0) >= 40 and any(f[0] < 900 for f in foes),
+              "LT": (me.get("pot") or 0) >= 1 and hpm > 0 and hp / hpm < 0.85}
+        m = np.zeros(NA, dtype=bool)
+        for k, name in enumerate(BUTTONS):
+            if ok[name]:
+                m[k::len(BUTTONS)] = True
+        return m
 
 
 def main():
@@ -209,12 +228,14 @@ def train_loop(agent, net, opt, dev, seconds, total):
     obs, _, _, _ = agent.observe()
     if True:
         while time.time() - t0 < SECONDS:
-            O, A, LP, V, R, D = [], [], [], [], [], []
+            O, A, LP, V, R, D, MK = [], [], [], [], [], [], []
             ep = {"reward": 0.0, "dealt": 0.0, "kills": 0, "taken": 0.0, "deaths": 0, "acts": [0] * NA}
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
                 with torch.no_grad():
+                    mask = agent.mask.copy()
                     logits, v = net(torch.tensor(obs, device=dev)[None])
+                    logits = logits.masked_fill(~torch.tensor(mask, device=dev)[None], -1e9)
                     dist = torch.distributions.Categorical(logits=logits)
                     a = dist.sample()
                 a_i = int(a.item())
@@ -226,6 +247,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                     time.sleep(0.3)
                     continue
                 O.append(obs)
+                MK.append(mask)
                 A.append(a_i)
                 LP.append(float(dist.log_prob(a).item()))
                 V.append(float(v.item()))
@@ -268,6 +290,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
             ret = adv + np.array(V, dtype=np.float32)
             To = torch.tensor(np.array(O), device=dev)
             Ta = torch.tensor(A, device=dev)
+            Tm = torch.tensor(np.array(MK), device=dev)
             Tlp = torch.tensor(LP, device=dev)
             Tadv = torch.tensor((adv - adv.mean()) / (adv.std() + 1e-8), device=dev)
             Tret = torch.tensor(ret, device=dev)
@@ -277,6 +300,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                 for s in range(0, len(O), 256):
                     i = perm[s:s + 256]
                     logits, v = net(To[i])
+                    logits = logits.masked_fill(~Tm[i], -1e9)
                     dist = torch.distributions.Categorical(logits=logits)
                     ratio = torch.exp(dist.log_prob(Ta[i]) - Tlp[i])
                     pl = -torch.min(ratio * Tadv[i], torch.clamp(ratio, 0.8, 1.2) * Tadv[i]).mean()
