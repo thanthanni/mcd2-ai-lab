@@ -169,6 +169,13 @@ def main():
                      and not os.path.basename(p).startswith("play_")]
             n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
             print(f"[자동 실행] 결과 {n}개 보냄", flush=True)
+            if not stopped and time.time() - t0 < 120:        # 2분도 못 가고 끝났으면 오류: 작업을 '안 한 것'으로 되돌려 나중에 다시
+                try:
+                    os.remove(LAST)
+                except OSError:
+                    pass
+                print("[자동 실행] 작업이 바로 끝나서(오류) 다음에 다시 시도할게", flush=True)
+                break
             if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만
                 print("[자동 실행] 남은 반복은 멈춤", flush=True)
                 break
