@@ -155,10 +155,11 @@ def main():
             p = subprocess.Popen(["cmd", "/c", bat], cwd=HERE, env=env)
             stopped = None
             import gamewin
-            while p.poll() is None:                           # 감시: 안티치트 게임이 켜지거나 패드가 켜지면 봇을 바로 끔
+            while p.poll() is None:                           # 감시: 안티치트 게임이 켜지거나 진짜 패드가 켜지면 봇을 바로 끔
                 time.sleep(5)
                 ac = anticheat_running()
-                if ac or gamewin.pads_connected():
+                # 봇이 만든 가상 패드도 XInput에 1개로 잡히니까, 2개 이상일 때만 '진짜 패드가 켜짐'
+                if ac or gamewin.pads_connected() >= 2:
                     stopped = ac or "패드 켜짐"
                     subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
                     print(f"[자동 실행] {stopped} → 봇을 멈췄어", flush=True)
@@ -176,7 +177,7 @@ def main():
                     pass
                 print("[자동 실행] 작업이 바로 끝나서(오류) 다음에 다시 시도할게", flush=True)
                 break
-            if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만
+            if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만(봇이 끝나면 가상 패드는 사라짐)
                 print("[자동 실행] 남은 반복은 멈춤", flush=True)
                 break
         return
