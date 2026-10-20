@@ -3,7 +3,7 @@
 
 job.txt 한 줄: "<작업번호> <bat 이름> [반복 횟수] [daily]"  예) 20261019-1600 28_ppo.bat 6 daily
 daily면 날짜가 바뀔 때마다 다시 한다(하루 한 번).
-봇 작업은 장훈이가 PC를 안 쓸 때만 시작한다: 마우스를 3분 넘게 안 움직였고 진짜 패드가 꺼져 있을 때.
+봇 작업은 오프라인 프로필(개발 전용)일 때만, 진짜 패드가 꺼져 있으면 바로 시작한다. 온라인 프로필이면 절대 안 돌린다.
 0_loop.bat이 1분마다 최신 파일을 받고 이걸 부른다.
 """
 from __future__ import annotations
@@ -69,6 +69,27 @@ def cursor_idle_seconds():
     with open(IDLE_FILE, "w") as f:
         f.write(f"{pt.x} {pt.y} {t}")
     return now - t
+
+
+def profile_mode():
+    """게임이 지금 쓰는 프로필: 'offline'(OfflinePlayerServiceImpl 있음) / 'online' / None(모름).
+    10-20 탐색: 온라인 로그인 중엔 OnlinePlayerServiceImpl만 1개, OfflinePlayerServiceImpl 0개."""
+    try:
+        from state_probe import find_ohs_app
+        app = find_ohs_app()
+        if not app:
+            return None
+        sys.path.insert(0, app)
+        import winproc
+        import uemem
+        ue = uemem.UE(winproc.Process(), rescan=True)
+        if ue.find_instances("OfflinePlayerServiceImpl"):
+            return "offline"
+        if ue.find_instances("OnlinePlayerServiceImpl"):
+            return "online"
+    except Exception:
+        return None
+    return None
 
 
 def game_running():
@@ -138,9 +159,15 @@ def main():
         import gamewin
         idle = cursor_idle_seconds()
         quick = "probe" in job[1]                        # 읽기만 하는 탐색 작업은 조작을 안 하니 바로 실행
-        if not quick and (idle < IDLE_NEEDED or gamewin.pads_connected()):
-            print(f"[자동 실행] 작업 {job[1]} 대기 중: PC를 쓰는 중이라(마우스 {idle:.0f}초 전에 움직임, "
-                  f"패드 {'켜짐' if gamewin.pads_connected() else '꺼짐'}) 3분 안 쓰고 패드 끄면 시작", flush=True)
+        mode = None if quick else profile_mode()
+        if not quick and mode != "offline":              # 봇은 오프라인 프로필에서만(온라인 캐릭터는 절대 안 건드림)
+            print(f"[자동 실행] 작업 {job[1]} 대기 중: 지금 프로필이 {'온라인' if mode == 'online' else '확인 불가'}이라 "
+                  f"봇은 안 돌려. 오프라인 프로필로 들어가면 바로 시작해.", flush=True)
+            if game_running() and not recorder_alive():
+                start_recorder()
+            return
+        if not quick and gamewin.pads_connected():       # 오프라인 프로필이면 마우스 기다림 없이 바로(패드만 꺼져 있으면)
+            print(f"[자동 실행] 작업 {job[1]} 대기 중: 오프라인 프로필인데 진짜 패드가 켜져 있어. 패드를 끄면 바로 시작해.", flush=True)
             if game_running() and not recorder_alive():
                 start_recorder()
             return
