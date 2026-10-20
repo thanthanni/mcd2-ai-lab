@@ -127,6 +127,27 @@ class Agent(Bot):
         self.dead_since = None
         self.mask = np.ones(NA, dtype=bool)
 
+    def back_to_field(self):
+        """죽으면 브레이브 헤이븐(마을)에서 되살아난다. 텔레포트 동상 단축키 Z를 눌러 마지막 부활 제단(필드)으로 돌아간다
+        (knowledge/mechanics.md 9장). 확인 창이 뜰 수 있어서 A도 한 번 누르고, 불러오기를 기다린다."""
+        import ctypes
+        u32 = ctypes.windll.user32
+        try:
+            import gamewin
+            gamewin.focus_game()
+        except Exception:
+            pass
+        time.sleep(3)
+        for _ in range(2):
+            u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 0, 0)      # Z 누름
+            time.sleep(0.1)
+            u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 2, 0)      # Z 뗌
+            time.sleep(1.5)
+            self.pad.tap("A")
+            time.sleep(1.0)
+        time.sleep(8)                                                      # 불러오기
+        self.visited = set()
+
     def goal_dist(self, row):
         g = row.get("guide") or []
         if len(g) > 1:
@@ -298,6 +319,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                             break
                         if time.time() - t_dead > 6:
                             agent.pad.tap("A")
+                    agent.back_to_field()             # 안전장치: 마을에서 되살아나면 텔레포트 동상(Z)으로 필드 복귀
                     agent.prev_goal = None
             if len(O) < 64:
                 break
