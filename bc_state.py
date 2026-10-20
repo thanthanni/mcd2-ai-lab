@@ -72,7 +72,8 @@ def move_label(v):
     return 1 + int(round(a / (math.pi / 4))) % 8      # 1..8: 세계 좌표 기준 8방향
 
 
-def load(paths):
+def load(paths, featfn=None):
+    featfn = featfn or feats
     X, M, B = [], [], []
     for p in paths:
         rows = [json.loads(l) for l in open(p, encoding="utf-8")]
@@ -89,7 +90,7 @@ def load(paths):
             lab = [1 if (b & m and not prev_btn & m) else 0 for m in BTN.values()]   # 이번에 새로 누른 것
             lab += [1 if pad[k] > 0.5 else 0 for k in HOLD.values()]
             prev_btn = b
-            X.append(feats(r))
+            X.append(featfn(r))
             M.append(move_label(nx["me"]["v"]))
             B.append(lab)
     return np.array(X, dtype=np.float32), np.array(M), np.array(B)

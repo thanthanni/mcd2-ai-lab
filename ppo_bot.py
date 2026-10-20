@@ -27,6 +27,7 @@ from rule_bot import Bot, Pad, PASSIVE   # noqa: E402  (패드·스틱 방향·�
 from bc_bot import BCBot                 # noqa: E402  (상태 한 줄 만들기·성적 세기만 빌림)
 from state_probe import find_ohs_app     # noqa: E402
 import bc_state                           # noqa: E402
+import kfeat                              # noqa: E402  (게임 지식: 몹 성질)
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
 POLICY = os.path.join(HERE, "ppo_policy.pt")
@@ -34,7 +35,7 @@ LOG = os.path.join(HERE, "ppo_log.jsonl")
 OUT = os.path.join(HERE, "ppo_result.txt")
 BUTTONS = ["none", "X", "A", "LB", "RT", "ART", "LT"]
 NA = 9 * len(BUTTONS)
-NOBS = 69
+NOBS = kfeat.NOBS                     # 상태 69 + 몹 지식 30
 DT = 0.1
 ROLL = 1024
 lines: list[str] = []
@@ -63,7 +64,7 @@ def bc_pretrain(net, dev):
     paths = sorted(glob.glob(os.path.join(glob.escape(HERE), "play_*.jsonl")))
     if not paths:
         return 0
-    X, M, B = bc_state.load(paths)
+    X, M, B = bc_state.load(paths, featfn=kfeat.feats)
     outs = bc_state.OUTS                  # X A LB B RB Y L3 RT LT
     idx = {n: i for i, n in enumerate(outs)}
     acts = []
@@ -162,7 +163,12 @@ class Agent(Bot):
         if cell not in self.visited:
             self.visited.add(cell)
             r += 0.3
-        obs = np.array(bc_state.feats(row), dtype=np.float32)
+        # 게임 지식 보상: 자폭하는 몹(크리퍼 등)에 250 안으로 붙어 있으면 조금씩 감점
+        for f in row["foes"]:
+            k = kfeat.info(f[6])
+            if k and k["explode"] and f[0] < 250:
+                r -= 0.05
+        obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
         return obs, r, dead, d
 
@@ -204,6 +210,9 @@ def main():
     net = AC().to(dev)
     opt = torch.optim.Adam(net.parameters(), lr=3e-4)
     total = 0
+    if os.path.exists(POLICY) and torch.load(POLICY, map_location="cpu").get("nobs") != NOBS:
+        os.replace(POLICY, POLICY + ".old")           # 입력 모양이 바뀐 옛 정책은 치워 두고 새로 시작
+        log("입력이 바뀌어서 정책을 새로 시작해(옛 것은 ppo_policy.pt.old)")
     if os.path.exists(POLICY):
         ck = torch.load(POLICY, map_location=dev)
         net.load_state_dict(ck["net"])
@@ -312,7 +321,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                     nn.utils.clip_grad_norm_(net.parameters(), 0.5)
                     opt.step()
             total += len(O)
-            torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "steps": total}, POLICY)
+            torch.save({"net": net.state_dict(), "opt": opt.state_dict(), "steps": total, "nobs": NOBS}, POLICY)
             mv = [sum(ep["acts"][m * len(BUTTONS):(m + 1) * len(BUTTONS)]) for m in range(9)]
             bt = [sum(ep["acts"][k::len(BUTTONS)]) for k in range(len(BUTTONS))]
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
