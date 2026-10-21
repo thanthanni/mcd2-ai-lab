@@ -30,6 +30,7 @@ import bc_state                           # noqa: E402
 import kfeat                              # noqa: E402  (게임 지식: 몹 성질)
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
+FIELD = os.path.join(HERE, "field_pos.json")
 POLICY = os.path.join(HERE, "ppo_policy.pt")
 LOG = os.path.join(HERE, "ppo_log.jsonl")
 OUT = os.path.join(HERE, "ppo_result.txt")
@@ -128,13 +129,18 @@ class Agent(Bot):
         self.mask = np.ones(NA, dtype=bool)
         self.pos, self.anchor, self.unstuck, self.in_town = None, None, 0, False
         self.last_hostile = time.time()
+        self.town_t, self.field_saved = None, 0.0
+        try:
+            self.field_pos = tuple(json.load(open(FIELD, encoding="utf-8")))
+        except (OSError, ValueError):
+            self.field_pos = (22000.0, 14000.0, 4400.0)   # 기록에서 몹이 많던 필드(마을 북쪽)
 
     def exploring(self):
         """싸울 몹이 4초 넘게 안 보이면 True(그동안은 길찾기 두뇌가 움직임)."""
         return time.time() - self.last_hostile > 4
 
     def revive(self, t0, seconds):
-        """죽으면: 멈추고 6초 뒤부터 A(부활), 되살아나면 마을이니까 동상(Z)으로 필드 복귀."""
+        """죽으면: 멈추고 6초 뒤부터 A(부활). 되살아나면 마을이라 check_stuck이 필드 쪽으로 걸어 나간다."""
         self.pad.reset()
         self.rt_on = False
         t_dead = time.time()
@@ -148,7 +154,11 @@ class Agent(Bot):
                 break
             if time.time() - t_dead > 6:
                 self.pad.tap("A")
-        self.back_to_field()
+        time.sleep(3)
+        for _ in range(2):                    # 부활 창 등 닫기. 마을이면 check_stuck이 필드 쪽으로 걸어 나감
+            self.pad.tap("B")
+            time.sleep(0.4)
+        self.visited = set()
         self.prev_goal = None
 
     def check_stuck(self):
@@ -157,18 +167,29 @@ class Agent(Bot):
         if self.pos is None:
             return
         now = time.time()
-        # 마을(허수아비·마을 주민이 보임)에는 싸울 몹이 없다 → 20초 넘게 마을이면 동상(Z)으로 필드 복귀
+        # 마을(허수아비·마을 주민이 보임): 마지막으로 싸웠던 필드 쪽으로 걸어 나간다.
+        # (Z는 순간이동이 아니라 지도를 여는 키라서 안 씀, 10-21 확인) 15초마다 B로 열린 창(지도·상점)을 닫음.
         if self.in_town:
-            self.town_t = getattr(self, "town_t", None) or now
-            if now - self.town_t > 6:
-                log("[마을] 마을 → 동상(Z)으로 필드 복귀")
+            if getattr(self, "town_t", None) is None:
+                self.town_t, self.town_b = now, now
+                log(f"[마을] 필드 {tuple(round(v) for v in self.field_pos[:2])} 쪽으로 걸어 나감")
+            if now - self.town_b > 15:
                 self.pad.reset()
-                self.rt_on = False
+                self.pad.tap("B")
+                self.town_b = now
+            x, y, z = self.pos3
+            gx, gy = self.field_pos[0] - x, self.field_pos[1] - y
+            k = min(1.0, 1000 / max(math.hypot(gx, gy), 1))
+            self.go(x, y, z, (x + gx * k, y + gy * k, z), gx, gy)
+            self._unstick(x, y, now, {})
+            if now - self.town_t > 120 and now - getattr(self, "town_log", 0) > 120:
+                self.town_log = now
                 self.unstuck += 1
-                self.back_to_field()
-                self.town_t = time.time()
-                self.anchor = None
+                log("[마을] 2분째 못 나감")
+            self.anchor = None
             return
+        if self.town_t is not None:
+            log(f"[마을] 빠져나옴({now - self.town_t:.0f}초)")
         self.town_t = None
         if self.anchor is None or math.hypot(self.pos[0] - self.anchor[0], self.pos[1] - self.anchor[1]) > 150:
             self.anchor, self.anchor_t, self.tries = self.pos, now, 0
@@ -268,10 +289,17 @@ class Agent(Bot):
         self.score(row)
         d = {k: self.ev[k] - before[k] for k in self.ev}
         dead = row["me"]["hp"][0] <= 0
-        self.pos = (x, y)
+        self.pos, self.pos3 = (x, y), (x, y, z)
         if any(f[0] < SIGHT and not any(k in f[6] for k in PASSIVE) and (f[0] < 350 or (f[7] is not None and f[7] < 0.5))
                for f in row["foes"]):
             self.last_hostile = time.time()
+            if not any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"]) and time.time() - self.field_saved > 60:
+                self.field_pos, self.field_saved = (x, y, z), time.time()     # 싸운 곳 = 돌아갈 필드
+                try:
+                    with open(FIELD, "w", encoding="utf-8") as f:
+                        json.dump(self.field_pos, f)
+                except OSError:
+                    pass
         self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
