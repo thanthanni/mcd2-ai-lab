@@ -89,7 +89,7 @@ def main():
         cam = None
     try:                      # 지난번에 못 보낸 기록이 있으면 먼저 보냄
         import uploader
-        k = uploader.send_pending(quiet=True)
+        k = uploader.send_pending(quiet=True) if os.environ.get("MCD2_UPLOAD") == "1" else 0   # 자동 업로드 끔(ntfy 하루 한도, 10-22)
         if k:
             print(f"지난 기록 {k}개를 보냈어.")
     except Exception:
@@ -188,7 +188,8 @@ def main():
     print(f"\n기록 끝: {n_lines}줄, {(time.time() - t0) / 60:.1f}분")
     try:                      # 창을 바로 닫아도 되게, 기록 파일은 여기서 직접 보낸다
         import uploader
-        print(f"보낸 기록 파일: {uploader.send_pending()}개")
+        if os.environ.get("MCD2_UPLOAD") == "1":       # 기록은 PC에 쌓아 두고, 필요할 때 21_send_pending으로 보냄
+            print(f"보낸 기록 파일: {uploader.send_pending()}개")
     except Exception as e:
         print("보내기 실패:", e)
 
