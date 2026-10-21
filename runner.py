@@ -246,7 +246,7 @@ def main():
                     try:
                         import urllib.request
                         cur = urllib.request.urlopen(JOB_URL, timeout=15).read().decode("utf-8", "ignore").split()
-                        if cur and cur[0] != jid.split("@")[0]:
+                        if cur and cur[0] > jid.split("@")[0]:   # 더 새 번호일 때만(캐시된 옛 job.txt에 속지 않게)
                             stopped = "새 작업이 올라옴"
                             subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
                             print("[자동 실행] 새 작업이 올라와서 지금 판을 껐어", flush=True)
