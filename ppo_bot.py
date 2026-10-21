@@ -208,14 +208,23 @@ class Agent(Bot):
         except Exception:
             pass
         time.sleep(3)
-        for _ in range(2):
-            u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 0, 0)      # Z 누름
-            time.sleep(0.1)
-            u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 2, 0)      # Z 뗌
-            time.sleep(1.5)
-            self.pad.tap("A")
-            time.sleep(1.0)
+        for _ in range(2):                                                 # 열려 있는 창(장비 강화 등)부터 닫기
+            self.pad.tap("B")
+            time.sleep(0.4)
+        u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 0, 0)          # Z 누름
+        time.sleep(0.1)
+        u32.keybd_event(0x5A, u32.MapVirtualKeyW(0x5A, 0), 2, 0)          # Z 뗌
+        time.sleep(1.5)
+        self.pad.tap("A")                                                  # 확인 창이 뜨면 확인
         time.sleep(8)                                                      # 불러오기
+        try:
+            row, _ = self.row()
+            if any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"]):
+                for _ in range(2):                                         # 아직 마을이면: A로 잘못 연 창이 있을 수 있어서 닫기
+                    self.pad.tap("B")
+                    time.sleep(0.4)
+        except Exception:
+            pass
         self.visited = set()
 
     def goal_dist(self, row):
