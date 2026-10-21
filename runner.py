@@ -190,7 +190,7 @@ def main():
     job = pending_job()
     try:
         until, why, rid = (open(RETRY, encoding="utf-8").read().split("\t") + [""])[:3]
-        if job and time.time() < float(until) and rid in ("", job[0]):   # 같은 작업만 20분 기다림(새 작업은 바로)
+        if job and time.time() < float(until) and rid == job[0]:   # 같은 작업만 20분 기다림(새 작업은 바로)
             status(f"대기: {why} (20분마다 다시 시도)")
             if game_running() and not recorder_alive():
                 start_recorder()
