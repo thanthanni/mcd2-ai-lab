@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import gzip
 import os
 import re
 import sys
@@ -18,6 +19,29 @@ def topic():
         return m.group(1) if m else None
     except OSError:
         return None
+
+
+def _body(p, name):
+    """100KB 넘는 파일은 gzip으로 줄여서 보냄(ntfy 하루 용량 한도 때문, 10-22). (내용, 보낼 이름)"""
+    data = open(p, "rb").read()
+    if len(data) > 100_000 and not name.endswith((".gz", ".zip", ".jpg", ".png")):
+        return gzip.compress(data, 6), name + ".gz"
+    return data, name
+
+
+def send_text(title, text):
+    """첨부 없이 짧은 글만 보냄(상태 알림용, 용량 한도를 거의 안 씀). 성공하면 1."""
+    t = topic()
+    if not t:
+        return 0
+    req = urllib.request.Request(f"https://ntfy.sh/{t}", data=text.encode("utf-8"), method="POST",
+                                 headers={"Title": title})
+    try:
+        urllib.request.urlopen(req, timeout=30).read()
+        return 1
+    except Exception as e:
+        print(f"{title}: 보내기 실패 {e}")
+        return 0
 
 
 def send_pending(patterns=("play_*.jsonl",), quiet=False):
@@ -42,8 +66,9 @@ def send_pending(patterns=("play_*.jsonl",), quiet=False):
             if os.path.getsize(p) > 14_000_000:
                 print(f"{name}: 너무 커서 못 보냄(14MB 넘음)")
                 continue
-            req = urllib.request.Request(f"https://ntfy.sh/{t}", data=open(p, "rb").read(), method="PUT",
-                                         headers={"Filename": name, "Title": "upload"})
+            data, fname = _body(p, name)
+            req = urllib.request.Request(f"https://ntfy.sh/{t}", data=data, method="PUT",
+                                         headers={"Filename": fname, "Title": "upload"})
             try:
                 urllib.request.urlopen(req, timeout=120).read()
             except Exception as e:
@@ -63,8 +88,9 @@ def send_file(name, title="result"):
     p = os.path.join(HERE, name)
     if not t or not os.path.exists(p) or os.path.getsize(p) == 0 or os.path.getsize(p) > 14_000_000:
         return 0
-    req = urllib.request.Request(f"https://ntfy.sh/{t}", data=open(p, "rb").read(), method="PUT",
-                                 headers={"Filename": name, "Title": title})
+    data, fname = _body(p, name)
+    req = urllib.request.Request(f"https://ntfy.sh/{t}", data=data, method="PUT",
+                                 headers={"Filename": fname, "Title": title})
     try:
         urllib.request.urlopen(req, timeout=120).read()
         return 1

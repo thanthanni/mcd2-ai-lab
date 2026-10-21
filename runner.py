@@ -86,7 +86,7 @@ def status(msg):
         old = open(sp, encoding="utf-8").read().split("\t", 1) if os.path.exists(sp) else ["0", ""]
         if old[1:] != [msg] or time.time() - float(old[0]) > 1800:
             import uploader
-            if uploader.send_file("status.txt", title="status"):
+            if uploader.send_text("status", line):
                 with open(sp, "w", encoding="utf-8") as f:
                     f.write(f"{time.time()}\t{msg}")
     except Exception:
