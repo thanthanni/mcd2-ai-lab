@@ -23,7 +23,7 @@ import torch.nn as nn
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from rule_bot import Bot, Pad, PASSIVE   # noqa: E402  (패드·스틱 방향·상태 훑기만 씀, 규칙 판단은 안 씀)
+from rule_bot import Bot, Pad, PASSIVE, SIGHT   # noqa: E402  (패드·스틱 방향·상태 훑기만 씀, 규칙 판단은 안 씀)
 from bc_bot import BCBot                 # noqa: E402  (상태 한 줄 만들기·성적 세기만 빌림)
 from state_probe import find_ohs_app     # noqa: E402
 import bc_state                           # noqa: E402
@@ -127,6 +127,29 @@ class Agent(Bot):
         self.dead_since = None
         self.mask = np.ones(NA, dtype=bool)
         self.pos, self.anchor, self.unstuck, self.in_town = None, None, 0, False
+        self.last_hostile = time.time()
+
+    def exploring(self):
+        """싸울 몹이 4초 넘게 안 보이면 True(그동안은 길찾기 두뇌가 움직임)."""
+        return time.time() - self.last_hostile > 4
+
+    def revive(self, t0, seconds):
+        """죽으면: 멈추고 6초 뒤부터 A(부활), 되살아나면 마을이니까 동상(Z)으로 필드 복귀."""
+        self.pad.reset()
+        self.rt_on = False
+        t_dead = time.time()
+        while time.time() - t0 < seconds:
+            time.sleep(1)
+            try:
+                _, _, dead, _ = self.observe()
+            except Exception:
+                continue
+            if not dead:
+                break
+            if time.time() - t_dead > 6:
+                self.pad.tap("A")
+        self.back_to_field()
+        self.prev_goal = None
 
     def check_stuck(self):
         """40초 넘게 150 안쪽에서 못 벗어나면 갇힌 것(메뉴가 열렸거나, 창이 뒤로 갔거나, 마을에 갇힘).
@@ -235,6 +258,9 @@ class Agent(Bot):
         d = {k: self.ev[k] - before[k] for k in self.ev}
         dead = row["me"]["hp"][0] <= 0
         self.pos = (x, y)
+        if any(f[0] < SIGHT and not any(k in f[6] for k in PASSIVE) and (f[0] < 350 or (f[7] is not None and f[7] < 0.5))
+               for f in row["foes"]):
+            self.last_hostile = time.time()
         self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
@@ -288,6 +314,11 @@ def main():
     pad = Pad()
     ue = uemem.UE(winproc.Process(), rescan=True)
     agent = Agent(ue, pad)
+    try:
+        import screen
+        agent.clicker = screen.Clicker(ue, ue.p.pid)    # 길찾기 두뇌는 클릭 이동(게임 길찾기)을 씀
+    except Exception as e:
+        log("클릭 이동 못 켬:", e)
     gamewin.focus_game()
     time.sleep(0.5)
     agent.calibrate()
@@ -327,9 +358,38 @@ def train_loop(agent, net, opt, dev, seconds, total):
     if True:
         while time.time() - t0 < SECONDS:
             O, A, LP, V, R, D, MK = [], [], [], [], [], [], []
-            ep = {"reward": 0.0, "dealt": 0.0, "kills": 0, "taken": 0.0, "deaths": 0, "acts": [0] * NA}
+            ep = {"reward": 0.0, "dealt": 0.0, "kills": 0, "taken": 0.0, "deaths": 0, "acts": [0] * NA, "explore": 0}
+            exploring = False
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
+                if agent.exploring():                 # 싸울 몹이 없으면: 길찾기 두뇌(안내선·퀘스트·먼 몹 찾아가기)가 이동
+                    if not exploring:
+                        agent.pad.reset()
+                        agent.rt_on = False
+                        if D:
+                            D[-1] = True              # 학습 구간은 여기서 끊김
+                        exploring = True
+                    try:
+                        agent.step()
+                    except Exception:
+                        pass
+                    time.sleep(max(0, DT - (time.time() - tick)))
+                    try:
+                        obs, _, dead, d = agent.observe()
+                    except Exception:
+                        time.sleep(0.3)
+                        continue
+                    ep["explore"] += 1
+                    for k in ("dealt", "kills", "taken", "deaths"):
+                        ep[k] += d[k]
+                    if dead:
+                        agent.revive(t0, SECONDS)
+                    else:
+                        agent.check_stuck()
+                    continue
+                if exploring:
+                    agent.pad.reset()                 # 길찾기 두뇌가 누르던 것 놓고 신경망에게 넘김
+                    exploring = False
                 with torch.no_grad():
                     mask = agent.mask.copy()
                     logits, v = net(torch.tensor(obs, device=dev)[None])
@@ -358,22 +418,8 @@ def train_loop(agent, net, opt, dev, seconds, total):
                 obs = nobs
                 if not dead:
                     agent.check_stuck()
-                if dead:                              # 안전장치: 죽으면 멈추고 기다렸다가 A
-                    agent.pad.reset()
-                    agent.rt_on = False
-                    t_dead = time.time()
-                    while time.time() - t0 < SECONDS:
-                        time.sleep(1)
-                        try:
-                            obs, _, dead, _ = agent.observe()
-                        except Exception:
-                            continue
-                        if not dead:
-                            break
-                        if time.time() - t_dead > 6:
-                            agent.pad.tap("A")
-                    agent.back_to_field()             # 안전장치: 마을에서 되살아나면 텔레포트 동상(Z)으로 필드 복귀
-                    agent.prev_goal = None
+                if dead:                              # 안전장치: 죽으면 멈추고 기다렸다가 A, 되살아나면 필드로
+                    agent.revive(t0, SECONDS)
             if len(O) < 64:
                 break
             # PPO 갱신(GAE)
@@ -422,12 +468,12 @@ def train_loop(agent, net, opt, dev, seconds, total):
             bt = [sum(ep["acts"][k::len(BUTTONS)]) for k in range(len(BUTTONS))]
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
                    "dealt": round(ep["dealt"]), "kills": ep["kills"], "taken": round(ep["taken"]), "deaths": ep["deaths"],
-                   "cells": len(agent.visited), "unstuck": agent.unstuck, "entropy": round(float(ent.item()), 2),
+                   "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "entropy": round(float(ent.item()), 2),
                    "move": mv, "buttons": dict(zip(BUTTONS, bt))}
             with open(LOG, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 버튼 {rec['buttons']}")
+                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 버튼 {rec['buttons']}")
     return total
 
 
