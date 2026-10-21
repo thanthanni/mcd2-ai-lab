@@ -153,7 +153,7 @@ class Agent(Bot):
 
     def check_stuck(self):
         """40초 넘게 150 안쪽에서 못 벗어나면 갇힌 것(메뉴가 열렸거나, 창이 뒤로 갔거나, 마을에 갇힘).
-        1번째: 게임 창을 앞으로 + B(메뉴 닫기). 2번째부터: 동상(Z)으로 필드 복귀."""
+        1번째: 게임 창을 앞으로 + B(메뉴 닫기). 2번째부터: 길찾기 두뇌로 안 가 본 쪽 탐험(마을이면 위에서 Z)."""
         if self.pos is None:
             return
         now = time.time()
@@ -191,9 +191,11 @@ class Agent(Bot):
             for _ in range(2):
                 self.pad.tap("B")
                 time.sleep(0.5)
-        else:
-            log("[갇힘] 또 제자리 → 동상(Z)으로 필드 복귀")
-            self.back_to_field()
+        else:                                          # 필드에서 Z를 누르면 부활 제단으로 되돌아가 버림 → 탐험으로 빠져나감
+            log("[갇힘] 또 제자리 → 길찾기 두뇌로 안 가 본 쪽 탐험")
+            self.last_hostile = 0
+            self.wander_until = 0
+            self.cur_path = None
         self.tries += 1
         self.anchor_t = time.time()
 
