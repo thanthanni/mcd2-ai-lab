@@ -103,6 +103,7 @@ class Bot:
         self.hit = None               # (몹, 때리기 시작한 시각, 그때 체력)
         self.wander = (1.0, 0.0)      # 돌아다닐 세계 방향
         self.wander_until = 0.0
+        self.been = set()             # 가 본 500 칸(탐험할 때 안 가 본 쪽 고르기)
         self.last_guide = 0.0
         self.retreat_until = 0.0
         self.chase = None             # (쫓은 몹들, 시작 시각, 그때 가장 가까웠던 거리)
@@ -208,6 +209,9 @@ class Bot:
             d = math.hypot(mx - x, my - y)
             if h is None or h <= 0:
                 continue
+            if SIGHT <= d < SEEK and abs(mz - z) < ZGAP * 2:   # 먼 몹은 화면 밖이어도 찾아갈 후보(클릭 이동이 길을 찾아 줌)
+                far.append((d, mx - x, my - y, n, o))
+                continue
             if d > 350 and now > self.hurt_until:   # 벽 너머(붉은 형체)·화면 밖 몹은 무시(맞는 중이면 끔)
                 try:
                     if r.render_age(o) > 0.5:
@@ -228,6 +232,7 @@ class Bot:
                 if m and h / m < 0.35 and d < 900:
                     self.stats["kills"] += 1
 
+        self.been.add((int(x // 500), int(y // 500)))
         act = {"hp": round(hp), "soul": round(soul), "foes": len(foes), "pos": [round(x), round(y), round(z)]}
         close = [f for f in foes if f[0] < 500]
 
@@ -391,13 +396,25 @@ class Bot:
                         act["do"] = "interact"
                     self._unstick(x, y, now, act)
                     return act
-                if now > self.wander_until:
-                    a = math.atan2(self.wander[1], self.wander[0]) + 1.2
-                    self.wander, self.wander_until = (math.cos(a), math.sin(a)), now + 6
+                if now > self.wander_until:           # 할 퀘스트도 몹도 없으면: 안 가 본 쪽으로 탐험
+                    best, bs = None, -1.0
+                    for k8 in range(8):
+                        a = k8 * math.pi / 4
+                        c, sn = math.cos(a), math.sin(a)
+                        new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500)) not in self.been
+                                        for t in (600, 1100, 1600, 2100))
+                        sc = new_cells + 0.3 * (c * self.wander[0] + sn * self.wander[1])   # 같은 방향을 조금 선호
+                        if sc > bs:
+                            best, bs = (c, sn), sc
+                    self.wander, self.wander_until = best, now + 5
                 dx, dy = self.wander
-                act["do"] = "wander"
+                self.go(x, y, z, (x + dx * 1500, y + dy * 1500, z), dx, dy)
+                self._unstick(x, y, now, act)
+                act["do"] = "explore"
+                return act
             if act["do"] == "seek":
-                self.go(x, y, z, (x + dx, y + dy, z), dx, dy)
+                k = min(1.0, 1200 / max(math.hypot(dx, dy), 1))   # 먼 몹은 화면 안쪽 1200 지점을 찍으며 다가감
+                self.go(x, y, z, (x + dx * k, y + dy * k, z), dx, dy)
             else:
                 self.pad.stick(*self.to_stick(dx, dy))
             self._unstick(x, y, now, act)
