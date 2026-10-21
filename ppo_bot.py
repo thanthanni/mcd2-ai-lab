@@ -126,7 +126,7 @@ class Agent(Bot):
         self.last_tap = 0.0
         self.dead_since = None
         self.mask = np.ones(NA, dtype=bool)
-        self.pos, self.anchor, self.unstuck = None, None, 0
+        self.pos, self.anchor, self.unstuck, self.in_town = None, None, 0, False
 
     def check_stuck(self):
         """40초 넘게 150 안쪽에서 못 벗어나면 갇힌 것(메뉴가 열렸거나, 창이 뒤로 갔거나, 마을에 갇힘).
@@ -134,6 +134,19 @@ class Agent(Bot):
         if self.pos is None:
             return
         now = time.time()
+        # 마을(허수아비·마을 주민이 보임)에는 싸울 몹이 없다 → 20초 넘게 마을이면 동상(Z)으로 필드 복귀
+        if self.in_town:
+            self.town_t = getattr(self, "town_t", None) or now
+            if now - self.town_t > 20:
+                log("[마을] 20초째 마을 → 동상(Z)으로 필드 복귀")
+                self.pad.reset()
+                self.rt_on = False
+                self.unstuck += 1
+                self.back_to_field()
+                self.town_t = time.time()
+                self.anchor = None
+            return
+        self.town_t = None
         if self.anchor is None or math.hypot(self.pos[0] - self.anchor[0], self.pos[1] - self.anchor[1]) > 150:
             self.anchor, self.anchor_t, self.tries = self.pos, now, 0
             return
@@ -222,6 +235,7 @@ class Agent(Bot):
         d = {k: self.ev[k] - before[k] for k in self.ev}
         dead = row["me"]["hp"][0] <= 0
         self.pos = (x, y)
+        self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
         r = 0.1 * d["dealt"] + 3 * d["kills"] - 0.2 * d["taken"] - 20 * d["deaths"] - 0.01
