@@ -36,7 +36,8 @@ def ensure_packages():
     """봇에 필요한 패키지가 빠져 있으면(.venv를 새로 만든 경우 등) uv로 설치."""
     import importlib.util
     import subprocess
-    need = [p for p in ("vgamepad", "numpy", "torch") if importlib.util.find_spec(p) is None]
+    pkgs = {"vgamepad": "vgamepad", "numpy": "numpy", "torch": "torch", "PIL": "pillow"}   # 가져올 이름 → 설치 이름
+    need = [pip for mod, pip in pkgs.items() if importlib.util.find_spec(mod) is None]
     if not need:
         return
     uv = os.path.join(os.path.expanduser("~"), ".local", "bin", "uv.exe")

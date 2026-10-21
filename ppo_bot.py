@@ -31,6 +31,7 @@ import kfeat                              # noqa: E402  (게임 지식: 몹 성�
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
 FIELD = os.path.join(HERE, "field_pos.json")
+SNAPS = os.path.join(HERE, "snaps")
 POLICY = os.path.join(HERE, "ppo_policy.pt")
 LOG = os.path.join(HERE, "ppo_log.jsonl")
 OUT = os.path.join(HERE, "ppo_result.txt")
@@ -135,6 +136,26 @@ class Agent(Bot):
         except (OSError, ValueError):
             self.field_pos = (22000.0, 14000.0, 4400.0)   # 기록에서 몹이 많던 필드(마을 북쪽)
 
+    def snap(self, tag):
+        """게임 창 안쪽만 작은 JPG로 저장(게임 창이 맨 앞일 때만, 다른 화면은 절대 안 찍음). 판이 끝나면 묶어서 보냄."""
+        now = time.time()
+        if now - getattr(self, "last_snap", 0) < 20 or not self.clicker:
+            return
+        try:
+            import ctypes
+            import screen
+            from PIL import ImageGrab
+            if ctypes.windll.user32.GetForegroundWindow() != self.clicker.hwnd:
+                return
+            x, y, w, h = screen.client_rect(self.clicker.hwnd)
+            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+            img.thumbnail((960, 540))
+            os.makedirs(SNAPS, exist_ok=True)
+            img.save(os.path.join(SNAPS, time.strftime("%H%M%S") + f"_{tag}.jpg"), quality=60)
+            self.last_snap = now
+        except Exception:
+            pass
+
     def exploring(self):
         """싸울 몹이 4초 넘게 안 보이면 True(그동안은 길찾기 두뇌가 움직임)."""
         return time.time() - self.last_hostile > 4
@@ -143,6 +164,7 @@ class Agent(Bot):
         """죽으면: 멈추고 6초 뒤부터 A(부활). 되살아나면 마을이라 check_stuck이 필드 쪽으로 걸어 나간다."""
         self.pad.reset()
         self.rt_on = False
+        self.snap("dead")
         t_dead = time.time()
         while time.time() - t0 < seconds:
             time.sleep(1)
@@ -167,12 +189,16 @@ class Agent(Bot):
         if self.pos is None:
             return
         now = time.time()
+        if now - getattr(self, "last_tick_snap", 0) > 180:     # 3분마다 한 장(평소 모습)
+            self.last_tick_snap = now
+            self.snap("tick")
         # 마을(허수아비·마을 주민이 보임): 마지막으로 싸웠던 필드 쪽으로 걸어 나간다.
         # (Z는 순간이동이 아니라 지도를 여는 키라서 안 씀, 10-21 확인) 15초마다 B로 열린 창(지도·상점)을 닫음.
         if self.in_town:
             if getattr(self, "town_t", None) is None:
                 self.town_t, self.town_b = now, now
                 log(f"[마을] 필드 {tuple(round(v) for v in self.field_pos[:2])} 쪽으로 걸어 나감")
+                self.snap("town")
             if now - self.town_b > 15:
                 self.pad.reset()
                 self.pad.tap("B")
@@ -186,6 +212,7 @@ class Agent(Bot):
                 self.town_log = now
                 self.unstuck += 1
                 log("[마을] 2분째 못 나감")
+                self.snap("town_stuck")
             self.anchor = None
             return
         if self.town_t is not None:
@@ -203,6 +230,7 @@ class Agent(Bot):
         self.unstuck += 1
         if self.tries == 0:
             log("[갇힘] 40초째 제자리 → 창 앞으로 + B")
+            self.snap("stuck")
             try:
                 import gamewin
                 gamewin.focus_game()
@@ -214,6 +242,7 @@ class Agent(Bot):
                 time.sleep(0.5)
         else:                                          # 필드에서 Z를 누르면 부활 제단으로 되돌아가 버림 → 탐험으로 빠져나감
             log("[갇힘] 또 제자리 → 길찾기 두뇌로 안 가 본 쪽 탐험")
+            self.snap("stuck2")
             self.last_hostile = 0
             self.wander_until = 0
             self.cur_path = None
@@ -388,6 +417,17 @@ def main():
     finally:
         agent.stop = True
         pad.reset()
+        try:                                  # 찍은 화면을 한 파일로 묶음(자동 실행기가 서버로 보냄)
+            import zipfile
+            shots = sorted(glob.glob(os.path.join(SNAPS, "*.jpg")))
+            if shots:
+                with zipfile.ZipFile(os.path.join(HERE, time.strftime("snaps_%m%d_%H%M.zip")), "w") as z:
+                    for f in shots:
+                        z.write(f, os.path.basename(f))
+                for f in shots:
+                    os.remove(f)
+        except Exception as e:
+            log("화면 묶기 실패:", e)
 
 
 def train_loop(agent, net, opt, dev, seconds, total):

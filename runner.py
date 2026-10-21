@@ -258,7 +258,7 @@ def main():
                     print(f"[자동 실행] {stopped} → 봇을 멈췄어", flush=True)
                     break
             names = [os.path.basename(p) for p in glob.glob(os.path.join(glob.escape(HERE), "*.txt")) +
-                     glob.glob(os.path.join(glob.escape(HERE), "*.jsonl"))
+                     glob.glob(os.path.join(glob.escape(HERE), "*.jsonl")) + glob.glob(os.path.join(glob.escape(HERE), "snaps_*.zip"))
                      if os.path.getmtime(p) > t0 and os.path.basename(p) not in SKIP
                      and not os.path.basename(p).startswith("play_")]
             n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
