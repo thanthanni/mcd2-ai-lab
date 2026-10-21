@@ -104,6 +104,8 @@ class Bot:
         self.wander = (1.0, 0.0)      # 돌아다닐 세계 방향
         self.wander_until = 0.0
         self.been = set()             # 가 본 500 칸(탐험할 때 안 가 본 쪽 고르기)
+        self.bad_dir = {}             # 막혔던 탐험 방향 → 다시 써도 되는 시각
+        self.last_focus = 0.0
         self.last_guide = 0.0
         self.retreat_until = 0.0
         self.chase = None             # (쫓은 몹들, 시작 시각, 그때 가장 가까웠던 거리)
@@ -401,11 +403,16 @@ class Bot:
                     for k8 in range(8):
                         a = k8 * math.pi / 4
                         c, sn = math.cos(a), math.sin(a)
+                        if self.bad_dir.get((round(c, 2), round(sn, 2)), 0) > now:
+                            continue
                         new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500)) not in self.been
                                         for t in (600, 1100, 1600, 2100))
                         sc = new_cells + 0.3 * (c * self.wander[0] + sn * self.wander[1])   # 같은 방향을 조금 선호
                         if sc > bs:
                             best, bs = (c, sn), sc
+                    if best is None:                  # 사방이 막혔으면 기억을 지우고 뒤로
+                        self.bad_dir.clear()
+                        best = (-self.wander[0], -self.wander[1])
                     self.wander, self.wander_until = best, now + 5
                 dx, dy = self.wander
                 self.go(x, y, z, (x + dx * 1500, y + dy * 1500, z), dx, dy)
@@ -456,6 +463,13 @@ class Bot:
             if self.clicker.click_world(target, (x, y, z)):
                 self.moved_by = "click"
                 return
+            if time.time() - self.last_focus > 10:       # 다른 창이 앞에 있어서 클릭이 막혔으면 게임 창을 다시 앞으로
+                self.last_focus = time.time()
+                try:
+                    import gamewin
+                    gamewin.focus_game()
+                except Exception:
+                    pass
         self.pad.stick(*self.to_stick(dx, dy))
         self.moved_by = "stick"
 
@@ -552,6 +566,7 @@ class Bot:
         if self.last_pos and math.hypot(x - self.last_pos[0], y - self.last_pos[1]) < 8:
             self.stuck_since = self.stuck_since or now
             if now - self.stuck_since > 1.5:
+                self.bad_dir[(round(self.wander[0], 2), round(self.wander[1], 2))] = now + 30   # 막힌 방향은 30초 동안 안 감
                 self.pad.tap("A")
                 self.stats["jumps"] += 1
                 self.stuck_since = None
