@@ -32,6 +32,7 @@ import kfeat                              # noqa: E402  (게임 지식: 몹 성�
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
 FIELD = os.path.join(HERE, "field_pos.json")
 SNAPS = os.path.join(HERE, "snaps")
+TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 POLICY = os.path.join(HERE, "ppo_policy.pt")
 LOG = os.path.join(HERE, "ppo_log.jsonl")
 OUT = os.path.join(HERE, "ppo_result.txt")
@@ -134,29 +135,65 @@ class Agent(Bot):
         self.last_fight = self.last_combat = 0.0
         self.prev_loot, self.loot_names, self.chest_tried, self.pickups = {}, {}, {}, 0
         self.trail, self.escape_to, self.escape_until = [], None, 0.0
-        self.pending_danger, self.last_taken = None, 0.0   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
+        self.pending_danger, self.last_taken = None, 0.0
+        self.mode, self.last_do = "start", None
+        import threading
+        threading.Thread(target=self.dashcam, daemon=True).start()   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
         try:
             self.field_pos = tuple(json.load(open(FIELD, encoding="utf-8")))
         except (OSError, ValueError):
             self.field_pos = (22000.0, 14000.0, 4400.0)   # 기록에서 몹이 많던 필드(마을 북쪽)
 
-    def snap(self, tag):
-        """게임 창 안쪽만 작은 JPG로 저장(게임 창이 맨 앞일 때만, 다른 화면은 절대 안 찍음). 판이 끝나면 묶어서 보냄."""
-        now = time.time()
-        if now - getattr(self, "last_snap", 0) < 20 or not self.clicker:
-            return
+    def dashcam(self):
+        """블랙박스: 2초마다 게임 창을 작게 찍어 최근 20초(10장)만 메모리에 들고 있다. 일이 생기면(snap) 그 직전 장면까지 저장.
+        게임 창이 맨 앞일 때만 찍음(다른 화면은 절대 안 찍음)."""
+        import collections
+        import ctypes
+        self.cam_buf = collections.deque(maxlen=10)
         try:
-            import ctypes
             import screen
             from PIL import ImageGrab
-            if ctypes.windll.user32.GetForegroundWindow() != self.clicker.hwnd:
-                return
-            x, y, w, h = screen.client_rect(self.clicker.hwnd)
-            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
-            img.thumbnail((960, 540))
+        except Exception:
+            return
+        while not self.stop:
+            time.sleep(2)
+            try:
+                if not self.clicker or ctypes.windll.user32.GetForegroundWindow() != self.clicker.hwnd:
+                    continue
+                x, y, w, h = screen.client_rect(self.clicker.hwnd)
+                img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                img.thumbnail((640, 360))
+                self.cam_buf.append((time.time(), img))
+            except Exception:
+                pass
+
+    def snap(self, tag):
+        """일이 생긴 순간 + 그 직전 20초 블랙박스 장면을 저장. 판이 끝나면 묶어서 보냄."""
+        now = time.time()
+        if now - getattr(self, "last_snap", 0) < 20:
+            return
+        try:
             os.makedirs(SNAPS, exist_ok=True)
-            img.save(os.path.join(SNAPS, time.strftime("%H%M%S") + f"_{tag}.jpg"), quality=60)
+            frames = list(getattr(self, "cam_buf", []))
+            for t, img in frames:
+                img.save(os.path.join(SNAPS, time.strftime("%H%M%S", time.localtime(t)) + f"_{tag}.jpg"), quality=55)
             self.last_snap = now
+        except Exception:
+            pass
+
+    def trace(self, extra=None):
+        """0.5초마다 한 줄: 위치·체력·모드(신경망/길찾기/마을/되돌아감)·한 일·주변 몹·물건. 캡처 사이에 일어난 일을 보기 위함."""
+        now = time.time()
+        if now - getattr(self, "last_trace", 0) < 0.5 or not self.pos3:
+            return
+        self.last_trace = now
+        try:
+            row = {"t": round(now, 1), "p": [round(v) for v in self.pos3], "hp": self.my_hp, "mode": self.mode,
+                   "do": self.last_do, "town": self.in_town, "loot": len(getattr(self, "near_loot", {}) or {})}
+            if extra:
+                row.update(extra)
+            with open(TRACE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
         except Exception:
             pass
 
@@ -431,6 +468,8 @@ class Agent(Bot):
         self.prev_loot, self.near_loot = near, near
         obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
+        hostile = [f[0] for f in row["foes"] if not any(k in f[6] for k in PASSIVE)]
+        self.trace({"foe": round(min(hostile)) if hostile else None, "r": round(r, 2)})
         return obs, r, dead, d
 
     def knowledge_mask(self, row):
@@ -531,6 +570,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
                 if tick < agent.escape_until and agent.escape_to and agent.pos:   # 지형 피해: 안전했던 자리로 되돌아감
+                    agent.mode, agent.last_do = "escape", "back"
                     ex, ey = agent.escape_to[0] - agent.pos[0], agent.escape_to[1] - agent.pos[1]
                     agent.pad.stick(*agent.to_stick(ex, ey))
                     time.sleep(DT)
@@ -546,6 +586,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                 if agent.in_town:                     # 마을: 아무것도 안 누름(NPC를 눌러 마법부여 창 등을 여는 것 방지), 동상(Z)으로 나가기만
                     agent.pad.reset()
                     agent.rt_on = False
+                    agent.mode, agent.last_do = "town", "walk_out"
                     if D:
                         D[-1] = True
                     agent.check_stuck()
@@ -563,10 +604,13 @@ def train_loop(agent, net, opt, dev, seconds, total):
                             D[-1] = True              # 학습 구간은 여기서 끊김
                         exploring = True
                     try:
-                        if not agent.loot_step():     # 줍는 것·상자가 가까우면 그쪽 먼저
-                            agent.step()
-                    except Exception:
-                        pass
+                        if agent.loot_step():         # 줍는 것·상자가 가까우면 그쪽 먼저
+                            agent.mode, agent.last_do = "loot", "go_loot"
+                        else:
+                            act_ = agent.step() or {}
+                            agent.mode, agent.last_do = "explore", act_.get("do")
+                    except Exception as e:
+                        agent.last_do = f"err {str(e)[:40]}"
                     time.sleep(max(0, DT - (time.time() - tick)))
                     try:
                         obs, _, dead, d = agent.observe()
@@ -592,6 +636,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                     a = dist.sample()
                 a_i = int(a.item())
                 agent.act(a_i)
+                agent.mode, agent.last_do = "ppo", f"{a_i // len(BUTTONS)}{BUTTONS[a_i % len(BUTTONS)]}"
                 time.sleep(max(0, DT - (time.time() - tick)))
                 try:
                     nobs, r, dead, d = agent.observe()
