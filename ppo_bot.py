@@ -126,6 +126,40 @@ class Agent(Bot):
         self.last_tap = 0.0
         self.dead_since = None
         self.mask = np.ones(NA, dtype=bool)
+        self.pos, self.anchor, self.unstuck = None, None, 0
+
+    def check_stuck(self):
+        """40초 넘게 150 안쪽에서 못 벗어나면 갇힌 것(메뉴가 열렸거나, 창이 뒤로 갔거나, 마을에 갇힘).
+        1번째: 게임 창을 앞으로 + B(메뉴 닫기). 2번째부터: 동상(Z)으로 필드 복귀."""
+        if self.pos is None:
+            return
+        now = time.time()
+        if self.anchor is None or math.hypot(self.pos[0] - self.anchor[0], self.pos[1] - self.anchor[1]) > 150:
+            self.anchor, self.anchor_t, self.tries = self.pos, now, 0
+            return
+        if now - getattr(self, "last_fight", 0) < 10:     # 제자리에서 싸우는 중이면 갇힌 게 아님
+            self.anchor_t = max(self.anchor_t, now - 30)
+        if now - self.anchor_t < 40:
+            return
+        self.pad.reset()
+        self.rt_on = False
+        self.unstuck += 1
+        if self.tries == 0:
+            log("[갇힘] 40초째 제자리 → 창 앞으로 + B")
+            try:
+                import gamewin
+                gamewin.focus_game()
+            except Exception:
+                pass
+            time.sleep(0.5)
+            for _ in range(2):
+                self.pad.tap("B")
+                time.sleep(0.5)
+        else:
+            log("[갇힘] 또 제자리 → 동상(Z)으로 필드 복귀")
+            self.back_to_field()
+        self.tries += 1
+        self.anchor_t = time.time()
 
     def back_to_field(self):
         """죽으면 브레이브 헤이븐(마을)에서 되살아난다. 텔레포트 동상 단축키 Z를 눌러 마지막 부활 제단(필드)으로 돌아간다
@@ -187,6 +221,9 @@ class Agent(Bot):
         self.score(row)
         d = {k: self.ev[k] - before[k] for k in self.ev}
         dead = row["me"]["hp"][0] <= 0
+        self.pos = (x, y)
+        if d["dealt"] > 0 or d["taken"] > 0:
+            self.last_fight = time.time()
         r = 0.1 * d["dealt"] + 3 * d["kills"] - 0.2 * d["taken"] - 20 * d["deaths"] - 0.01
         gd = self.goal_dist(row)
         if gd is not None and self.prev_goal is not None:
@@ -305,6 +342,8 @@ def train_loop(agent, net, opt, dev, seconds, total):
                 for k in ("dealt", "kills", "taken", "deaths"):
                     ep[k] += d[k]
                 obs = nobs
+                if not dead:
+                    agent.check_stuck()
                 if dead:                              # 안전장치: 죽으면 멈추고 기다렸다가 A
                     agent.pad.reset()
                     agent.rt_on = False
@@ -369,12 +408,12 @@ def train_loop(agent, net, opt, dev, seconds, total):
             bt = [sum(ep["acts"][k::len(BUTTONS)]) for k in range(len(BUTTONS))]
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
                    "dealt": round(ep["dealt"]), "kills": ep["kills"], "taken": round(ep["taken"]), "deaths": ep["deaths"],
-                   "cells": len(agent.visited), "entropy": round(float(ent.item()), 2),
+                   "cells": len(agent.visited), "unstuck": agent.unstuck, "entropy": round(float(ent.item()), 2),
                    "move": mv, "buttons": dict(zip(BUTTONS, bt))}
             with open(LOG, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 버튼 {rec['buttons']}")
+                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 버튼 {rec['buttons']}")
     return total
 
 

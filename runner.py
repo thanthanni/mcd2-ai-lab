@@ -19,7 +19,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RECPID = os.path.join(HERE, "recorder.pid")
-SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid"}
+SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt"}
 IDLE_NEEDED = 180
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
 # 런처(라이엇 클라이언트·롤 클라이언트처럼 늘 켜져 있을 수 있는 것)는 빼고, 실제 게임 화면 프로세스만 본다.
@@ -71,6 +71,26 @@ def cursor_idle_seconds():
     return now - t
 
 
+WHY = {"v": ""}
+
+
+def status(msg):
+    """지금 상태를 status.txt로 남기고, 바뀌었거나 30분 지났으면 서버로도 보낸다(왜 안 도는지 밖에서 알 수 있게)."""
+    try:
+        line = time.strftime("%m-%d %H:%M ") + msg
+        with open(os.path.join(HERE, "status.txt"), "w", encoding="utf-8") as f:
+            f.write(line + "\n")
+        sp = os.path.join(HERE, "status_sent.txt")
+        old = open(sp, encoding="utf-8").read().split("\t", 1) if os.path.exists(sp) else ["0", ""]
+        if old[1:] != [msg] or time.time() - float(old[0]) > 1800:
+            import uploader
+            if uploader.send_file("status.txt", title="status"):
+                with open(sp, "w", encoding="utf-8") as f:
+                    f.write(f"{time.time()}\t{msg}")
+    except Exception:
+        pass
+
+
 def profile_mode():
     """지금 월드에 들어간 영웅이 오프라인 영웅인지: 'offline' / 'online' / None(모름).
     PlayerState.ActiveCharacterId → SaveGames\\Character<id>.sav가 있고 "IsOnline":false면 오프라인 영웅.
@@ -79,6 +99,7 @@ def profile_mode():
         from state_probe import find_ohs_app
         app = find_ohs_app()
         if not app:
+            WHY["v"] = "OHS 폴더 없음"
             return None
         sys.path.insert(0, app)
         import winproc
@@ -92,13 +113,15 @@ def profile_mode():
                 if cid:
                     break
         if not cid:
+            WHY["v"] = "영웅 번호를 못 읽음(메뉴·로딩 화면일 수 있음)"
             return None
         save = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Dungeons2", "Saved", "SaveGames", f"Character{cid}.sav")
         if not os.path.exists(save):
             return "online"                              # 서버에만 있는 영웅
         head = open(save, "rb").read().decode("utf-8", "ignore")
         return "offline" if '"IsOnline":false' in head.replace(" ", "") else "online"
-    except Exception:
+    except Exception as e:
+        WHY["v"] = f"읽기 오류 {str(e)[:80]}"
         return None
 
 
@@ -161,9 +184,11 @@ def main():
         if recorder_alive():
             stop_recorder()
         print(f"[자동 실행] {ac} 실행 중이라 쉬는 중(꺼지면 다시 시작)", flush=True)
+        status(f"쉬는 중: {ac} 실행 중")
         return
     job = pending_job()
     if job and not game_running():
+        status(f"대기: 마던2 꺼짐(할 일 {job[1]})")
         return                                           # 마던2가 꺼져 있으면(딴 게임 중 등) 아무것도 안 함
     if job:
         import gamewin
@@ -173,11 +198,13 @@ def main():
         if not quick and mode != "offline":              # 봇은 오프라인 프로필에서만(온라인 캐릭터는 절대 안 건드림)
             print(f"[자동 실행] 작업 {job[1]} 대기 중: 지금 프로필이 {'온라인' if mode == 'online' else '확인 불가'}이라 "
                   f"봇은 안 돌려. 오프라인 프로필로 들어가면 바로 시작해.", flush=True)
+            status(f"대기: 프로필 {mode or '확인 불가'} {WHY['v'] if mode is None else ''}".strip())
             if game_running() and not recorder_alive():
                 start_recorder()
             return
         if not quick and gamewin.pads_connected():       # 오프라인 프로필이면 마우스 기다림 없이 바로(패드만 꺼져 있으면)
             print(f"[자동 실행] 작업 {job[1]} 대기 중: 오프라인 프로필인데 진짜 패드가 켜져 있어. 패드를 끄면 바로 시작해.", flush=True)
+            status("대기: 진짜 패드가 켜져 있음")
             if game_running() and not recorder_alive():
                 start_recorder()
             return
@@ -188,6 +215,7 @@ def main():
         import uploader
         for k in range(reps):
             print(f"[자동 실행] 작업 {jid} {bat} ({k + 1}/{reps})", flush=True)
+            status(f"학습 중: {bat} {k + 1}/{reps}")
             t0 = time.time()
             env = dict(os.environ, NEXT=bat)
             p = subprocess.Popen(["cmd", "/c", bat], cwd=HERE, env=env)
@@ -219,6 +247,7 @@ def main():
                 print("[자동 실행] 남은 반복은 멈춤", flush=True)
                 break
         return
+    status("오늘 할 일 끝, 기록만" if game_running() else "오늘 할 일 끝, 마던2 꺼짐")
     if game_running() and not recorder_alive():
         start_recorder()
 
