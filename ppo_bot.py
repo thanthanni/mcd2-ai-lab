@@ -181,7 +181,7 @@ class Agent(Bot):
         except Exception:
             pass
 
-    def trace(self, extra=None):
+    def write_trace(self, extra=None):
         """0.5초마다 한 줄: 위치·체력·모드(신경망/길찾기/마을/되돌아감)·한 일·주변 몹·물건. 캡처 사이에 일어난 일을 보기 위함."""
         now = time.time()
         if now - getattr(self, "last_trace", 0) < 0.5 or not self.pos3:
@@ -469,7 +469,7 @@ class Agent(Bot):
         obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
         hostile = [f[0] for f in row["foes"] if not any(k in f[6] for k in PASSIVE)]
-        self.trace({"foe": round(min(hostile)) if hostile else None, "r": round(r, 2)})
+        self.write_trace({"foe": round(min(hostile)) if hostile else None, "r": round(r, 2)})
         return obs, r, dead, d
 
     def knowledge_mask(self, row):

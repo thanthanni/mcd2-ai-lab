@@ -189,8 +189,8 @@ def main():
         return
     job = pending_job()
     try:
-        until, why = open(RETRY, encoding="utf-8").read().split("\t", 1)
-        if job and time.time() < float(until):
+        until, why, rid = (open(RETRY, encoding="utf-8").read().split("\t") + [""])[:3]
+        if job and time.time() < float(until) and rid in ("", job[0]):   # 같은 작업만 20분 기다림(새 작업은 바로)
             status(f"대기: {why} (20분마다 다시 시도)")
             if game_running() and not recorder_alive():
                 start_recorder()
@@ -277,7 +277,7 @@ def main():
                     if "ViGEmBus" in txt:
                         why = "가상 패드(ViGEmBus) 연결 안 됨 - PC를 재부팅하거나 ViGEmBus를 다시 깔아야 함"
                 with open(RETRY, "w", encoding="utf-8") as f:
-                    f.write(f"{time.time() + 1200}\t{why}")
+                    f.write(f"{time.time() + 1200}\t{why}\t{jid}")
                 print(f"[자동 실행] 작업이 바로 끝남({why}). 20분 뒤 다시 시도할게", flush=True)
                 break
             if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만(봇이 끝나면 가상 패드는 사라짐)
