@@ -133,7 +133,8 @@ class Agent(Bot):
         self.town_t, self.field_saved = None, 0.0
         self.last_fight = self.last_combat = 0.0
         self.prev_loot, self.loot_names, self.chest_tried, self.pickups = {}, {}, {}, 0
-        self.trail, self.escape_to, self.escape_until = [], None, 0.0   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
+        self.trail, self.escape_to, self.escape_until = [], None, 0.0
+        self.pending_danger, self.last_taken = None, 0.0   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
         try:
             self.field_pos = tuple(json.load(open(FIELD, encoding="utf-8")))
         except (OSError, ValueError):
@@ -199,7 +200,7 @@ class Agent(Bot):
         self.pad.reset()
         self.rt_on = False
         self.snap("dead")
-        if self.pos and time.time() - self.last_combat > 5:   # 몹이 근처에 없었는데 죽음 = 강·낭떠러지 → 그 자리를 위험 지역으로
+        if self.pos and time.time() - self.last_combat > 6:   # 몹이 근처에 없었는데 죽음 = 강·낭떠러지 → 그 자리를 위험 지역으로
             self.add_danger(*self.pos)
             log(f"[위험] 몹 없이 죽은 자리 기억 {tuple(round(v) for v in self.pos)}")
         t_dead = time.time()
@@ -370,15 +371,26 @@ class Agent(Bot):
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
         now = time.time()
-        if d["dealt"] > 0 or any(f[0] < 800 and not any(k in f[6] for k in PASSIVE) for f in row["foes"]):
-            self.last_combat = now                # 몹과 붙어 있었음(물에 빠져 닳는 피는 여기 안 들어감)
-        if d["taken"] > 0 and now - self.last_combat > 3:
-            # 몹이 없는데 피가 닳음 = 깊은 물 같은 지형 피해 → 그 자리를 위험 지역으로 기억하고, 2초 전 자리로 되돌아감
-            self.add_danger(x, y)
+        if d["dealt"] > 0 or any(f[0] < 1500 and not any(k in f[6] for k in PASSIVE) for f in row["foes"]):
+            self.last_combat = now                # 몹과 붙어 있었음(멀리서 쏘는 몹 포함, 물에 빠져 닳는 피는 여기 안 들어감)
+        if d["taken"] > 0:
+            self.last_taken = now
+        # 지형 피해 판정: 몹이 6초 넘게 없는데 피가 닳으면 일단 2초 전 자리로 되돌아가 본다.
+        # 되돌아간 뒤에 피가 멈추면 그 자리 탓(깊은 물 등) → 위험 지역으로 기억.
+        # 되돌아가도 계속 닳으면 독·불 같은 지속 피해 → 자리 탓이 아니니 기억 안 함.
+        if self.pending_danger and now > self.escape_until:
+            if now - self.last_taken > 1.0:
+                self.add_danger(*self.pending_danger)
+                log(f"[위험] 자리 탓 확인 {tuple(round(v) for v in self.pending_danger)} → 기억")
+            else:
+                log("[위험] 되돌아가도 피가 닳음 → 독·불 같은 지속 피해로 봄(기억 안 함)")
+            self.pending_danger = None
+        if d["taken"] > 0 and now - self.last_combat > 6 and now > self.escape_until and not self.pending_danger:
             back = [p for p in self.trail if now - p[0] > 2.0]
-            if back and now > self.escape_until:
+            if back:
                 self.escape_to, self.escape_until = back[-1][1:], now + 2.5
-                log(f"[위험] 몹 없이 피가 닳음 {round(x), round(y)} → 되돌아감")
+                self.pending_danger = (x, y)
+                log(f"[위험] 몹 없이 피가 닳음 {round(x), round(y)} → 되돌아가 봄")
         elif d["taken"] == 0:
             self.trail.append((now, x, y))
             self.trail = self.trail[-60:]
