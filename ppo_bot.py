@@ -160,8 +160,8 @@ class Agent(Bot):
         # 마을(허수아비·마을 주민이 보임)에는 싸울 몹이 없다 → 20초 넘게 마을이면 동상(Z)으로 필드 복귀
         if self.in_town:
             self.town_t = getattr(self, "town_t", None) or now
-            if now - self.town_t > 20:
-                log("[마을] 20초째 마을 → 동상(Z)으로 필드 복귀")
+            if now - self.town_t > 6:
+                log("[마을] 마을 → 동상(Z)으로 필드 복귀")
                 self.pad.reset()
                 self.rt_on = False
                 self.unstuck += 1
@@ -373,6 +373,18 @@ def train_loop(agent, net, opt, dev, seconds, total):
             exploring = False
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
+                if agent.in_town:                     # 마을: 아무것도 안 누름(NPC를 눌러 마법부여 창 등을 여는 것 방지), 동상(Z)으로 나가기만
+                    agent.pad.reset()
+                    agent.rt_on = False
+                    if D:
+                        D[-1] = True
+                    agent.check_stuck()
+                    time.sleep(DT)
+                    try:
+                        obs, _, _, _ = agent.observe()
+                    except Exception:
+                        time.sleep(0.3)
+                    continue
                 if agent.exploring():                 # 싸울 몹이 없으면: 길찾기 두뇌(안내선·퀘스트·먼 몹 찾아가기)가 이동
                     if not exploring:
                         agent.pad.reset()
