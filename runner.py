@@ -226,6 +226,12 @@ def main():
         for k in range(reps):
             print(f"[자동 실행] 작업 {jid} {bat} ({k + 1}/{reps})", flush=True)
             status(f"학습 중: {bat} {k + 1}/{reps}")
+            if k:                                             # 판 사이에 새 코드 받기(3시간 작업 도중에도 고친 게 바로 들어가게)
+                try:
+                    import loop_step
+                    loop_step.update()
+                except Exception as e:
+                    print("[자동 실행] 업데이트 실패:", e, flush=True)
             t0 = time.time()
             env = dict(os.environ, NEXT=bat)
             p = subprocess.Popen(["cmd", "/c", bat], cwd=HERE, env=env)
