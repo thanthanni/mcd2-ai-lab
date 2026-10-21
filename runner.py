@@ -18,8 +18,9 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
+RETRY = os.path.join(HERE, "retry_after.txt")
 RECPID = os.path.join(HERE, "recorder.pid")
-SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt"}
+SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt", "retry_after.txt"}
 IDLE_NEEDED = 180
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
 # 런처(라이엇 클라이언트·롤 클라이언트처럼 늘 켜져 있을 수 있는 것)는 빼고, 실제 게임 화면 프로세스만 본다.
@@ -187,6 +188,15 @@ def main():
         status(f"쉬는 중: {ac} 실행 중")
         return
     job = pending_job()
+    try:
+        until, why = open(RETRY, encoding="utf-8").read().split("\t", 1)
+        if job and time.time() < float(until):
+            status(f"대기: {why} (20분마다 다시 시도)")
+            if game_running() and not recorder_alive():
+                start_recorder()
+            return
+    except (OSError, ValueError):
+        pass
     if job and not game_running():
         status(f"대기: 마던2 꺼짐(할 일 {job[1]})")
         return                                           # 마던2가 꺼져 있으면(딴 게임 중 등) 아무것도 안 함
@@ -236,12 +246,22 @@ def main():
                      and not os.path.basename(p).startswith("play_")]
             n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
             print(f"[자동 실행] 결과 {n}개 보냄", flush=True)
-            if not stopped and time.time() - t0 < 120:        # 2분도 못 가고 끝났으면 오류: 작업을 '안 한 것'으로 되돌려 나중에 다시
+            if not stopped and time.time() - t0 < 120:        # 2분도 못 가고 끝났으면 오류: 작업을 '안 한 것'으로 되돌려 20분 뒤 다시
                 try:
                     os.remove(LAST)
                 except OSError:
                     pass
-                print("[자동 실행] 작업이 바로 끝나서(오류) 다음에 다시 시도할게", flush=True)
+                why = "오류"
+                for name in names:
+                    try:
+                        txt = open(os.path.join(HERE, name), encoding="utf-8", errors="ignore").read()
+                    except OSError:
+                        continue
+                    if "ViGEmBus" in txt:
+                        why = "가상 패드(ViGEmBus) 연결 안 됨 - PC를 재부팅하거나 ViGEmBus를 다시 깔아야 함"
+                with open(RETRY, "w", encoding="utf-8") as f:
+                    f.write(f"{time.time() + 1200}\t{why}")
+                print(f"[자동 실행] 작업이 바로 끝남({why}). 20분 뒤 다시 시도할게", flush=True)
                 break
             if stopped or gamewin.pads_connected():           # 멈췄거나 장훈이가 돌아왔으면 남은 반복은 그만(봇이 끝나면 가상 패드는 사라짐)
                 print("[자동 실행] 남은 반복은 멈춤", flush=True)
