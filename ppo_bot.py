@@ -209,6 +209,14 @@ class Agent(Bot):
         if not cands:
             return False
         dd, o, n, p = min(cands)
+        if "Pot" in n and dd < 200:                              # 에메랄드 항아리: 줍는 게 아니라 때려서 깸
+            self.pad.stick(*self.to_stick(p[0] - x, p[1] - y, 0.25))
+            self.pad.tap("X")
+            if not hasattr(self, "pot_hit") or self.pot_hit[0] != o:
+                self.pot_hit = (o, now)
+            elif now - self.pot_hit[1] > 6:                       # 6초 때려도 안 깨지면 포기
+                self.chest_tried[o] = now + 600
+            return True
         if "Chest" in n and dd < 220:
             self.pad.reset()
             ok = self.clicker.rclick_world(p) if self.clicker else False
