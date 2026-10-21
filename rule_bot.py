@@ -150,6 +150,7 @@ class Bot:
                     self.r.mobs, self.r.atr = fresh.mobs, fresh.atr
                     self.r.navpaths, self.r.trail, self.r.guides = fresh.navpaths, fresh.trail, fresh.guides
                     self.r.quest_objs = fresh.quest_objs
+                    self.r.loot = fresh.loot
             except Exception:
                 pass
 

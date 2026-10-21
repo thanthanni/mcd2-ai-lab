@@ -132,6 +132,8 @@ class Agent(Bot):
         self.last_hostile = time.time()
         self.town_t, self.field_saved = None, 0.0
         self.last_fight = self.last_combat = 0.0
+        self.prev_loot, self.loot_names, self.chest_tried, self.pickups = {}, {}, {}, 0
+        self.trail, self.escape_to, self.escape_until = [], None, 0.0   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
         try:
             self.field_pos = tuple(json.load(open(FIELD, encoding="utf-8")))
         except (OSError, ValueError):
@@ -156,6 +158,37 @@ class Agent(Bot):
             self.last_snap = now
         except Exception:
             pass
+
+    def loot_step(self):
+        """싸울 몹이 없을 때: 1200 안의 줍는 것·상자로 간다. 상자 앞(220 안)이면 우클릭+A로 열고 그 상자는 다시 안 감.
+        움직였으면 True."""
+        if not getattr(self, "near_loot", None) or not self.pos3:
+            return False
+        now = time.time()
+        x, y, z = self.pos3
+        cands = [(dd, o, n, p) for o, (n, dd, p) in self.near_loot.items()
+                 if dd < 1200 and self.chest_tried.get(o, 0) < now and not self.near_danger(p[0], p[1])]
+        if not cands:
+            return False
+        dd, o, n, p = min(cands)
+        if "Chest" in n and dd < 220:
+            self.pad.reset()
+            ok = self.clicker.rclick_world(p) if self.clicker else False
+            if not ok:
+                self.pad.tap("A")
+            self.chest_tried[o] = now + 600                      # 열었든 못 열었든 10분 동안 다시 안 감
+            log(f"[상자] 열기 시도 {n}")
+            self.snap("chest")
+            return True
+        if dd > 120:
+            self.go(x, y, z, p, p[0] - x, p[1] - y)
+            self.chest_tried.setdefault(o, 0)
+            if not hasattr(self, "loot_go") or self.loot_go[0] != o:
+                self.loot_go = (o, now)
+            elif now - self.loot_go[1] > 15:                      # 15초 안에 못 가면 포기(10분)
+                self.chest_tried[o] = now + 600
+            return True
+        return False
 
     def exploring(self):
         """싸울 몹이 4초 넘게 안 보이면 True(그동안은 길찾기 두뇌가 움직임)."""
@@ -336,8 +369,19 @@ class Agent(Bot):
         self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
+        now = time.time()
         if d["dealt"] > 0 or any(f[0] < 800 and not any(k in f[6] for k in PASSIVE) for f in row["foes"]):
-            self.last_combat = time.time()        # 몹과 붙어 있었음(물에 빠져 닳는 피는 여기 안 들어감)
+            self.last_combat = now                # 몹과 붙어 있었음(물에 빠져 닳는 피는 여기 안 들어감)
+        if d["taken"] > 0 and now - self.last_combat > 3:
+            # 몹이 없는데 피가 닳음 = 깊은 물 같은 지형 피해 → 그 자리를 위험 지역으로 기억하고, 2초 전 자리로 되돌아감
+            self.add_danger(x, y)
+            back = [p for p in self.trail if now - p[0] > 2.0]
+            if back and now > self.escape_until:
+                self.escape_to, self.escape_until = back[-1][1:], now + 2.5
+                log(f"[위험] 몹 없이 피가 닳음 {round(x), round(y)} → 되돌아감")
+        elif d["taken"] == 0:
+            self.trail.append((now, x, y))
+            self.trail = self.trail[-60:]
         r = 0.1 * d["dealt"] + 3 * d["kills"] - 0.2 * d["taken"] - 20 * d["deaths"] - 0.01
         gd = self.goal_dist(row)
         if gd is not None and self.prev_goal is not None:
@@ -352,6 +396,27 @@ class Agent(Bot):
             k = kfeat.info(f[6])
             if k and k["explode"] and f[0] < 250:
                 r -= 0.05
+        # 아이템 줍기: 250 안에 있던 줍는 것이 사라지면 +1 (상자는 열어도 안 사라져서 따로 기록만)
+        with self.lock:
+            loot = dict(self.r.loot)
+        near = {}
+        for o, n in loot.items():
+            try:
+                lx, ly, lz = self.r.loc(o)
+            except Exception:
+                continue
+            dd = math.hypot(lx - x, ly - y)
+            if dd < 1500 and abs(lz - z) < 600:
+                near[o] = (n, dd, (lx, ly, lz))
+                if n not in self.loot_names:
+                    self.loot_names[n] = 0
+                    log(f"[물건] 처음 본 것: {n} 거리 {dd:.0f}")
+        for o, (n, dd, _) in self.prev_loot.items():
+            if dd < 250 and o not in loot and "Chest" not in n:
+                r += 1.0
+                self.pickups += 1
+                self.loot_names[n] = self.loot_names.get(n, 0) + 1
+        self.prev_loot, self.near_loot = near, near
         obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
         return obs, r, dead, d
@@ -453,6 +518,19 @@ def train_loop(agent, net, opt, dev, seconds, total):
             exploring = False
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
+                if tick < agent.escape_until and agent.escape_to and agent.pos:   # 지형 피해: 안전했던 자리로 되돌아감
+                    ex, ey = agent.escape_to[0] - agent.pos[0], agent.escape_to[1] - agent.pos[1]
+                    agent.pad.stick(*agent.to_stick(ex, ey))
+                    time.sleep(DT)
+                    try:
+                        obs, _, dead, d = agent.observe()
+                    except Exception:
+                        continue
+                    for k in ("dealt", "kills", "taken", "deaths"):
+                        ep[k] += d[k]
+                    if dead:
+                        agent.revive(t0, SECONDS)
+                    continue
                 if agent.in_town:                     # 마을: 아무것도 안 누름(NPC를 눌러 마법부여 창 등을 여는 것 방지), 동상(Z)으로 나가기만
                     agent.pad.reset()
                     agent.rt_on = False
@@ -473,7 +551,8 @@ def train_loop(agent, net, opt, dev, seconds, total):
                             D[-1] = True              # 학습 구간은 여기서 끊김
                         exploring = True
                     try:
-                        agent.step()
+                        if not agent.loot_step():     # 줍는 것·상자가 가까우면 그쪽 먼저
+                            agent.step()
                     except Exception:
                         pass
                     time.sleep(max(0, DT - (time.time() - tick)))
@@ -571,12 +650,12 @@ def train_loop(agent, net, opt, dev, seconds, total):
             bt = [sum(ep["acts"][k::len(BUTTONS)]) for k in range(len(BUTTONS))]
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
                    "dealt": round(ep["dealt"]), "kills": ep["kills"], "taken": round(ep["taken"]), "deaths": ep["deaths"],
-                   "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "entropy": round(float(ent.item()), 2),
+                   "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "pickups": agent.pickups, "entropy": round(float(ent.item()), 2),
                    "move": mv, "buttons": dict(zip(BUTTONS, bt))}
             with open(LOG, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 버튼 {rec['buttons']}")
+                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 주움 {rec['pickups']} 버튼 {rec['buttons']}")
     return total
 
 

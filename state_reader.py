@@ -34,6 +34,10 @@ def log(*a):
 from state_probe import find_ohs_app  # noqa: E402
 
 
+LOOT = ("Pickup", "Loot", "Chest", "Emerald", "Drop")     # 줍는 것·상자 클래스 이름 조각
+LOOT_SKIP = ("W_", "GA_", "GE_", "GCN_", "AS_", "BTTask", "BP_Loot_Table", "DT_")
+
+
 class Reader:
     def __init__(self, ue):
         self.ue = ue
@@ -45,6 +49,7 @@ class Reader:
         self.atr = {}        # actor -> {ATR 클래스 이름: 객체}
         self.navpaths = []   # NavigationPath(길 안내선 경로 후보)
         self.trail = None    # BP_PlayerGuidanceTrail_Visual_C
+        self.loot = {}       # 줍는 것·상자(클래스 이름에 Pickup/Loot/Chest/Emerald/Drop) → 클래스 이름
         self.quest_objs = {} # 퀘스트 상호작용 대상(QuestASCActor: 벌통 자리 같은 것, QuestCharacter: 퀘스트 NPC) → 클래스 이름
         self.guides = []     # GCN_ShowGuidance_C(왼쪽 스틱 누르면 생기는 안내 경로, SplineComponent에 세계 좌표 점)
 
@@ -70,7 +75,7 @@ class Reader:
     def scan(self):
         """객체 표를 한 번 훑어서 캐릭터·몹·속성 묶음 목록을 새로 만든다(약 1초)."""
         ue = self.ue
-        player, mobs, npcs, atr, navpaths, trail, guides, quest = None, {}, set(), {}, [], None, [], {}
+        player, mobs, npcs, atr, navpaths, trail, guides, quest, loot = None, {}, set(), {}, [], None, [], {}, {}
         for o in ue.iter_objects():
             try:
                 ch = self._chain(ue.cls(o))
@@ -90,6 +95,10 @@ class Reader:
                 if "QuestASCActor" in ch and not ue.objname(o).startswith("Default__"):
                     quest[o] = n
                     continue
+                if any(k in n for k in LOOT) and "Actor" in ch and not n.startswith(LOOT_SKIP) \
+                        and not ue.objname(o).startswith("Default__"):
+                    loot[o] = n
+                    continue
                 if "Pawn" not in ch or ue.objname(o).startswith("Default__"):
                     continue
                 if "PlayerCharacter" in ch:
@@ -103,6 +112,7 @@ class Reader:
                 continue
         self.player, self.mobs, self.npcs, self.atr = player, mobs, npcs, atr
         self.navpaths, self.trail, self.guides, self.quest_objs = navpaths, trail, guides, quest
+        self.loot = loot
 
     def spline(self, comp):
         """SplineComponent.SplineCurves.Position.Points(원소 88바이트: InVal float, OutVal FVector@+8) → 점 목록"""
