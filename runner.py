@@ -19,6 +19,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RETRY = os.path.join(HERE, "retry_after.txt")
+JOB_URL = "https://raw.githubusercontent.com/thanthanni/mcd2-ai-lab/main/job.txt"
 RECPID = os.path.join(HERE, "recorder.pid")
 SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt", "retry_after.txt"}
 IDLE_NEEDED = 180
@@ -240,6 +241,18 @@ def main():
             beat = time.time()
             while p.poll() is None:                           # 감시: 안티치트 게임이 켜지거나 진짜 패드가 켜지면 봇을 바로 끔
                 time.sleep(5)
+                if time.time() - getattr(main, "jobchk", 0) > 60:   # 1분마다 서버의 작업 번호 확인: 바뀌었으면 지금 판을 끄고 새 작업으로
+                    main.jobchk = time.time()
+                    try:
+                        import urllib.request
+                        cur = urllib.request.urlopen(JOB_URL, timeout=15).read().decode("utf-8", "ignore").split()
+                        if cur and cur[0] != jid.split("@")[0]:
+                            stopped = "새 작업이 올라옴"
+                            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+                            print("[자동 실행] 새 작업이 올라와서 지금 판을 껐어", flush=True)
+                            break
+                    except Exception:
+                        pass
                 if time.time() - beat > 1200:                 # 20분마다 '살아 있음' 알림(PC가 꺼진 건지 봇이 도는 건지 구별)
                     beat = time.time()
                     status(f"학습 중: {bat} {k + 1}/{reps} ({(time.time() - t0) / 60:.0f}분째)")
