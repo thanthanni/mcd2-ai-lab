@@ -571,10 +571,21 @@ def main():
         try:                                  # 찍은 화면을 한 파일로 묶음(자동 실행기가 서버로 보냄)
             import zipfile
             shots = sorted(glob.glob(os.path.join(SNAPS, "*.jpg")))
-            if shots:
-                with zipfile.ZipFile(os.path.join(HERE, time.strftime("snaps_%m%d_%H%M.zip")), "w") as z:
-                    for f in shots:
-                        z.write(f, os.path.basename(f))
+            if shots:                         # ntfy 첨부는 한 파일 2MB까지 → 1.8MB씩 나눠 묶음
+                part, size, k = [], 0, 1
+                groups = []
+                for f in shots:
+                    sz = os.path.getsize(f)
+                    if part and size + sz > 1_800_000:
+                        groups.append(part)
+                        part, size = [], 0
+                    part.append(f)
+                    size += sz
+                groups.append(part)
+                for k, g in enumerate(groups[-4:], 1):          # 너무 많으면 마지막 4묶음만
+                    with zipfile.ZipFile(os.path.join(HERE, time.strftime("snaps_%m%d_%H%M") + f"_{k}.zip"), "w") as z:
+                        for f in g:
+                            z.write(f, os.path.basename(f))
                 for f in shots:
                     os.remove(f)
         except Exception as e:
