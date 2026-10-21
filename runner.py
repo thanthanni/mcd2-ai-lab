@@ -237,8 +237,19 @@ def main():
             p = subprocess.Popen(["cmd", "/c", bat], cwd=HERE, env=env)
             stopped = None
             import gamewin
+            beat = time.time()
             while p.poll() is None:                           # 감시: 안티치트 게임이 켜지거나 진짜 패드가 켜지면 봇을 바로 끔
                 time.sleep(5)
+                if time.time() - beat > 1200:                 # 20분마다 '살아 있음' 알림(PC가 꺼진 건지 봇이 도는 건지 구별)
+                    beat = time.time()
+                    status(f"학습 중: {bat} {k + 1}/{reps} ({(time.time() - t0) / 60:.0f}분째)")
+                if time.time() - t0 > 2700:                   # 한 판(30분)이 45분 넘게 안 끝나면 멈춘 것: 강제로 끝냄
+                    stopped = "시간 초과(봇이 멈춤)"
+                    subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+                    print(f"[자동 실행] {stopped} → 봇을 껐어", flush=True)
+                    status(f"오류: {bat} {k + 1}/{reps}이 45분 넘게 안 끝나서 강제로 끔")
+                    stopped = None                            # 다음 판은 계속
+                    break
                 ac = anticheat_running()
                 # 봇이 만든 가상 패드도 XInput에 1개로 잡히니까, 2개 이상일 때만 '진짜 패드가 켜짐'
                 if ac or gamewin.pads_connected() >= 2:
