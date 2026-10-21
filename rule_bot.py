@@ -33,6 +33,7 @@ OUT = os.path.join(HERE, "bot_result.txt")
 LOG = os.path.join(HERE, "bot_log.jsonl")
 CALIB = os.path.join(HERE, "calib.json")
 JUMPS = os.path.join(HERE, "jump_spots.json")   # 떨어졌던 자리(다음엔 점프해서 건넘), 판이 지나도 남음
+DANGER = os.path.join(HERE, "danger_spots.json")  # 몹 없이 죽은 자리(깊은 강·낭떠러지): 근처로는 안 감
 
 PASSIVE = ("Frog", "Sheep", "Cow", "Pig", "Chicken", "Villager", "Wolf", "Cat", "Rabbit", "Horse",
            "Llama", "Fox", "Bee", "Turtle", "Parrot", "Goat", "Axolotl", "Camel", "Armadillo", "Allay",
@@ -125,6 +126,10 @@ class Bot:
         self.trace = []               # 최근 2초 (시각, x, y, z)
         self.last_fall = self.last_jump = 0.0
         self.jump_spots = json.load(open(JUMPS)) if os.path.exists(JUMPS) else []
+        try:
+            self.danger = [tuple(p) for p in json.load(open(DANGER))]
+        except (OSError, ValueError):
+            self.danger = []
         self.wp_best = None           # (경로 점, 가장 가까웠던 거리, 그때 시각)
         self.detour_until = 0.0
         self.detour = (0.0, 0.0)
@@ -405,6 +410,8 @@ class Bot:
                         c, sn = math.cos(a), math.sin(a)
                         if self.bad_dir.get((round(c, 2), round(sn, 2)), 0) > now:
                             continue
+                        if any(self.near_danger(x + c * t, y + sn * t) for t in (300, 600, 900, 1200, 1500)):
+                            continue                  # 죽었던 곳(깊은 강 등)을 지나는 방향은 안 감
                         new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500), int(z // 400)) not in self.been
                                         for t in (600, 1100, 1600, 2100))
                         sc = new_cells + 0.3 * (c * self.wander[0] + sn * self.wander[1])   # 같은 방향을 조금 선호
@@ -519,8 +526,22 @@ class Bot:
                     pass
             self.last_fall = now
 
+    def near_danger(self, px, py, r=450):
+        return any(math.hypot(px - dx_, py - dy_) < r for dx_, dy_ in self.danger)
+
+    def add_danger(self, x, y):
+        """몹 없이 죽은 자리를 기억(같은 곳이면 한 번만). 다음부터 탐험·점프·이동에서 피함."""
+        if not self.near_danger(x, y, 200):
+            self.danger.append((round(x), round(y)))
+            try:
+                json.dump(self.danger[-300:], open(DANGER, "w"))
+            except Exception:
+                pass
+
     def _jump_spot(self, x, y, dx, dy):
         n = math.hypot(dx, dy) or 1
+        if self.near_danger(x + dx / n * 300, y + dy / n * 300):     # 그 앞이 죽었던 곳(깊은 강 등)이면 점프 안 함
+            return None
         for sx, sy, hx, hy in self.jump_spots:
             if math.hypot(x - sx, y - sy) < 150 and (dx * hx + dy * hy) / n > 0.5:
                 return True

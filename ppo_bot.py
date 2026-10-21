@@ -131,6 +131,7 @@ class Agent(Bot):
         self.pos, self.anchor, self.unstuck, self.in_town = None, None, 0, False
         self.last_hostile = time.time()
         self.town_t, self.field_saved = None, 0.0
+        self.last_fight = self.last_combat = 0.0
         try:
             self.field_pos = tuple(json.load(open(FIELD, encoding="utf-8")))
         except (OSError, ValueError):
@@ -165,6 +166,9 @@ class Agent(Bot):
         self.pad.reset()
         self.rt_on = False
         self.snap("dead")
+        if self.pos and time.time() - self.last_combat > 5:   # 몹이 근처에 없었는데 죽음 = 강·낭떠러지 → 그 자리를 위험 지역으로
+            self.add_danger(*self.pos)
+            log(f"[위험] 몹 없이 죽은 자리 기억 {tuple(round(v) for v in self.pos)}")
         t_dead = time.time()
         while time.time() - t0 < seconds:
             time.sleep(1)
@@ -332,6 +336,8 @@ class Agent(Bot):
         self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
+        if d["dealt"] > 0 or any(f[0] < 800 and not any(k in f[6] for k in PASSIVE) for f in row["foes"]):
+            self.last_combat = time.time()        # 몹과 붙어 있었음(물에 빠져 닳는 피는 여기 안 들어감)
         r = 0.1 * d["dealt"] + 3 * d["kills"] - 0.2 * d["taken"] - 20 * d["deaths"] - 0.01
         gd = self.goal_dist(row)
         if gd is not None and self.prev_goal is not None:
@@ -366,6 +372,12 @@ class Agent(Bot):
         for k, name in enumerate(BUTTONS):
             if ok[name]:
                 m[k::len(BUTTONS)] = True
+        if self.danger and self.pos:              # 몹 없이 죽었던 곳(깊은 강 등) 쪽으로 걷는 방향은 막음
+            x, y = self.pos
+            for mv in range(1, 9):
+                a = (mv - 1) * math.pi / 4
+                if self.near_danger(x + math.cos(a) * 300, y + math.sin(a) * 300, 350):
+                    m[mv * len(BUTTONS):(mv + 1) * len(BUTTONS)] = False
         return m
 
 
