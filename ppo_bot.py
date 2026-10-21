@@ -30,7 +30,7 @@ import bc_state                           # noqa: E402
 import kfeat                              # noqa: E402  (게임 지식: 몹 성질)
 
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1800.0
-FIELD = os.path.join(HERE, "field_pos.json")
+FIELD = os.path.join(HERE, "field_pos2.json")   # 2: 마을 근처로 잘못 저장된 옛 값 버림(10-21)
 SNAPS = os.path.join(HERE, "snaps")
 TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 POLICY = os.path.join(HERE, "ppo_policy.pt")
@@ -137,6 +137,7 @@ class Agent(Bot):
         self.trail, self.escape_to, self.escape_until = [], None, 0.0
         self.pending_danger, self.last_taken = None, 0.0
         self.mode, self.last_do = "start", None
+        self.town_cells = set()               # 마을로 판정됐던 1000 칸(마을 안 퀘스트 NPC는 탐험 목표에서 뺌)
         import threading
         threading.Thread(target=self.dashcam, daemon=True).start()   # 피 안 닳던 최근 자리들 / 지형 피해 때 되돌아갈 곳
         try:
@@ -153,8 +154,10 @@ class Agent(Bot):
         try:
             import screen
             from PIL import ImageGrab
-        except Exception:
+        except Exception as e:
+            log("블랙박스 못 켬(PIL 없음?):", e)
             return
+        log("블랙박스 켬")
         while not self.stop:
             time.sleep(2)
             try:
@@ -235,6 +238,15 @@ class Agent(Bot):
                 self.chest_tried[o] = now + 600
             return True
         return False
+
+    def _quest_target(self, x, y, z, now):
+        """길찾기 두뇌의 '퀘스트 대상 찾아가기'에서 마을 안 대상(대장장이·마법부여사 등 NPC)은 뺀다.
+        (퀘스트가 없을 때 마을 NPC로 걸어 들어갔다가 다시 나오는 왕복이 10-21 시험의 주 원인)"""
+        qa = Bot._quest_target(self, x, y, z, now)
+        if qa and (int(qa[2][0] // 1000), int(qa[2][1] // 1000)) in self.town_cells:
+            self.tried[qa[0]] = now                # 이 대상은 한동안 안 고름
+            return None
+        return qa
 
     def exploring(self):
         """싸울 몹이 4초 넘게 안 보이면 True(그동안은 길찾기 두뇌가 움직임)."""
@@ -405,7 +417,8 @@ class Agent(Bot):
         if any(f[0] < SIGHT and not any(k in f[6] for k in PASSIVE) and (f[0] < 350 or (f[7] is not None and f[7] < 0.5))
                for f in row["foes"]):
             self.last_hostile = time.time()
-            if not any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"]) and time.time() - self.field_saved > 60:
+            if d["kills"] > 0 and not any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"]) \
+                    and (int(x // 1000), int(y // 1000)) not in self.town_cells and time.time() - self.field_saved > 60:
                 self.field_pos, self.field_saved = (x, y, z), time.time()     # 싸운 곳 = 돌아갈 필드
                 try:
                     with open(FIELD, "w", encoding="utf-8") as f:
@@ -413,6 +426,8 @@ class Agent(Bot):
                 except OSError:
                     pass
         self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
+        if self.in_town:
+            self.town_cells.add((int(x // 1000), int(y // 1000)))
         if d["dealt"] > 0 or d["taken"] > 0:
             self.last_fight = time.time()
         now = time.time()
