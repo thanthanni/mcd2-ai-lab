@@ -103,7 +103,7 @@ class Bot:
         self.hit = None               # (몹, 때리기 시작한 시각, 그때 체력)
         self.wander = (1.0, 0.0)      # 돌아다닐 세계 방향
         self.wander_until = 0.0
-        self.been = set()             # 가 본 500 칸(탐험할 때 안 가 본 쪽 고르기)
+        self.been = set()             # 가 본 칸(가로세로 500 = 블록 약 5칸, 높이 400마다 다른 층)
         self.bad_dir = {}             # 막혔던 탐험 방향 → 다시 써도 되는 시각
         self.last_focus = 0.0
         self.last_guide = 0.0
@@ -234,7 +234,7 @@ class Bot:
                 if m and h / m < 0.35 and d < 900:
                     self.stats["kills"] += 1
 
-        self.been.add((int(x // 500), int(y // 500)))
+        self.been.add((int(x // 500), int(y // 500), int(z // 400)))   # 높이도 구별(위층은 다른 칸)
         act = {"hp": round(hp), "soul": round(soul), "foes": len(foes), "pos": [round(x), round(y), round(z)]}
         close = [f for f in foes if f[0] < 500]
 
@@ -405,7 +405,7 @@ class Bot:
                         c, sn = math.cos(a), math.sin(a)
                         if self.bad_dir.get((round(c, 2), round(sn, 2)), 0) > now:
                             continue
-                        new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500)) not in self.been
+                        new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500), int(z // 400)) not in self.been
                                         for t in (600, 1100, 1600, 2100))
                         sc = new_cells + 0.3 * (c * self.wander[0] + sn * self.wander[1])   # 같은 방향을 조금 선호
                         if sc > bs:

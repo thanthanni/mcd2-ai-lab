@@ -337,7 +337,7 @@ class Agent(Bot):
         if gd is not None and self.prev_goal is not None:
             r += float(np.clip((self.prev_goal - gd) * 0.002, -0.5, 0.5))
         self.prev_goal = gd
-        cell = (int(x // 500), int(y // 500))
+        cell = (int(x // 500), int(y // 500), int(z // 400))
         if cell not in self.visited:
             self.visited.add(cell)
             r += 0.3
