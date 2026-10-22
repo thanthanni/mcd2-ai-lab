@@ -56,7 +56,14 @@ class Pad:
     def __init__(self):
         import vgamepad as vg
         self.vg = vg
-        self.p = vg.VX360Gamepad()
+        for k in range(6):                # ViGEmBus가 가끔 첫 연결을 거절함(앞 판의 가상 패드가 덜 치워졌을 때) → 잠깐 쉬고 다시
+            try:
+                self.p = vg.VX360Gamepad()
+                break
+            except AssertionError:
+                if k == 5:
+                    raise
+                time.sleep(5)
         self.B = vg.XUSB_BUTTON
 
     def stick(self, x, y):
