@@ -1,12 +1,15 @@
-"""게임 길찾기 데이터(내비 메시) 찾기(읽기만 함, 10-22). 롤처럼 '멀리 찍으면 돌아서 가기'를 우리가 직접 하려고.
+"""게임 길찾기 데이터(내비 메시) 통째로 떠 오기(읽기만 함, 10-22 2차).
 
-몹 AI가 쓰는 LovikaRecastNavMesh(RecastNavMesh 계열) 액터 안에 반사 정보에 없는 FPImplRecastNavMesh 포인터가 있고,
-그 안 두 번째 칸이 Detour의 dtNavMesh다(공개 소스 구조). dtNavMesh의 타일 배열 → 각 타일의 머리(dtMeshHeader, 첫 4바이트
-'DNAV' 마법수)에서 다각형·꼭짓점 수와 범위를 읽는다. 구조 위치(오프셋)는 이 게임 빌드에서 확인이 안 됐으니
-마법수·내 위치 근처 좌표로 찾아서 navmesh_probe.txt에 적는다.
+1차 결과: LovikaRecastNavMesh 액터 +0x788 = FPImplRecastNavMesh(첫 칸이 액터), 그 +8 = dtNavMesh.
+dtNavMesh: +0x60 원점, +0x78/+0x80 타일 크기 3200, +0x88 최대 타일 55800, +0x8c 조회표 크기, +0xd8 posLookup,
++0xe0 nextFree, +0xe8 m_tiles. 'DNAV' 마법수는 안 보임(UE5에서 빠진 듯).
+이번엔 타일 구조체 크기와 data(타일 데이터 덩어리: 머리+꼭짓점+다각형+…)·dataSize 칸을 찾아서, 쓰는 타일의 덩어리를
+전부 navmesh_dump.jsonl로 보낸다(서버에서 해석). 덩어리 첫 부분 = 머리, data 포인터 = 머리 포인터.
 """
 from __future__ import annotations
 
+import base64
+import json
 import os
 import struct
 import sys
@@ -14,8 +17,9 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "navmesh_probe.txt")
+DUMP = os.path.join(HERE, "navmesh_dump.jsonl")
 sys.path.insert(0, HERE)
-MAGIC = 0x444E4156          # 'DNAV'
+CAP = 14_000_000           # 덩어리 합계 상한(압축 전)
 lines: list[str] = []
 
 
@@ -23,6 +27,10 @@ def log(*a):
     s = " ".join(str(x) for x in a)
     print(s, flush=True)
     lines.append(s)
+
+
+def ptr_ok(p):
+    return 0x10000 < p < 0x7FFFFFFFFFFF and p % 8 == 0
 
 
 def main():
@@ -47,122 +55,97 @@ def main():
         except Exception:
             return None
 
-    def ptr_ok(p):
-        return 0x10000 < p < 0x7FFFFFFFFFFF and p % 8 == 0
+    nav = next((o for o in ue.find_instances("LovikaRecastNavMesh") if not ue.objname(o).startswith("Default__")), None)
+    if not nav:
+        log("내비 메시 액터 없음")
+        return
+    impl = ue.q(nav + 0x788)
+    if ue.q(impl) != nav:                       # 위치가 바뀌었으면 다시 찾기
+        blob = rd(nav, 0x1200)
+        impl = next((p for p in (struct.unpack_from("<Q", blob, k)[0] for k in range(0, 0x1200 - 8, 8))
+                     if ptr_ok(p) and (rd(p, 8) or b"\0" * 8) == struct.pack("<Q", nav)), 0)
+    dt = ue.q(impl + 8)
+    head = rd(dt, 0x100)
+    orig = struct.unpack_from("<3d", head, 0x60)
+    tw, th = struct.unpack_from("<2d", head, 0x78)
+    max_tiles, lut_size, lut_mask = struct.unpack_from("<3i", head, 0x88)
+    pos_lookup, next_free, tiles = struct.unpack_from("<3Q", head, 0xd8)
+    salt_bits, tile_bits, poly_bits = struct.unpack_from("<3i", head, 0xf0)
+    log(f"dtNavMesh 0x{dt:x} 원점 {orig} 타일 {tw}x{th} 최대 {max_tiles} 조회표 {lut_size} 비트 {salt_bits}/{tile_bits}/{poly_bits}")
+    log(f"m_tiles 0x{tiles:x} nextFree 0x{next_free:x} (차이 0x{next_free - tiles:x})")
 
-    navs = []
-    for cname in ("LovikaRecastNavMesh", "RecastNavMesh"):
-        for o in ue.find_instances(cname):
-            if not ue.objname(o).startswith("Default__"):
-                navs.append(o)
-    log("내비 메시 액터", len(navs), [ue.objname(o) for o in navs])
-    for nav in navs[:2]:
-        props = ue.oprops(nav)
-        last = max((p.offset for p in props.values()), default=0)
-        log(f"\n[{ue.objname(nav)}] 반사 속성 {len(props)}개, 마지막 오프셋 0x{last:x}")
-        for name in ("AgentRadius", "AgentHeight", "TileSizeUU", "CellSize", "AgentMaxStepHeight", "bIsWorldPartitioned"):
-            if name in props:
-                raw = rd(nav + props[name].offset, 8)
-                log(f"  {name} @0x{props[name].offset:x} {props[name].kind} {raw.hex() if raw else '?'}")
-        blob = rd(nav, 0x1200) or b""
-        # FPImplRecastNavMesh: 첫 칸이 이 액터를 가리킴
-        impls = []
-        for off in range(0, len(blob) - 8, 8):
-            p = struct.unpack_from("<Q", blob, off)[0]
-            if ptr_ok(p):
-                b = rd(p, 16)
-                if b and struct.unpack_from("<Q", b)[0] == nav:
-                    impls.append((off, p, struct.unpack_from("<Q", b, 8)[0]))
-        log("  impl 후보(오프셋, 주소, 두 번째 칸)", [(hex(a), hex(b), hex(c)) for a, b, c in impls])
-        for off, impl, dt in impls[:2]:
-            if not ptr_ok(dt):
+    t0 = rd(tiles, 0x200)
+    log("tiles[0] 앞 0x200(8바이트씩):")
+    for k in range(0, 0x200, 8):
+        q = struct.unpack_from("<Q", t0, k)[0]
+        i1, i2 = struct.unpack_from("<ii", t0, k)
+        log(f"  +0x{k:03x} {q:016x} int({i1},{i2}){' PTR' if ptr_ok(q) else ''}")
+    # header 칸(+8 예상)과 같은 값을 가진 다른 칸 = data, 그 다음 int = dataSize
+    hdr_off, data_off = None, None
+    for ho in range(0, 0x40, 8):
+        h = struct.unpack_from("<Q", t0, ho)[0]
+        if not ptr_ok(h):
+            continue
+        for do in range(ho + 8, 0x200 - 8, 8):
+            if struct.unpack_from("<Q", t0, do)[0] == h:
+                hdr_off, data_off = ho, do
+                break
+        if hdr_off is not None:
+            break
+    log(f"header 칸 +0x{hdr_off:x}, data 칸 +0x{data_off:x}" if hdr_off is not None else "header=data 칸 못 찾음")
+    if hdr_off is None:
+        return
+    size_off = data_off + 8
+    # 구조체 크기: 여러 원소에서 header==data가 맞는 간격
+    stride = None
+    for s in range(0x40, 0x400, 8):
+        ok = bad = 0
+        for i in range(1, 12):
+            b = rd(tiles + i * s, max(data_off, hdr_off) + 8)
+            if not b:
+                bad += 1
                 continue
-            d = rd(dt, 0x180)
-            if not d:
-                continue
-            log(f"\n  dtNavMesh 0x{dt:x} 앞부분(8바이트씩: 정수 두 개 / 실수 / 포인터 여부)")
-            for k in range(0, 0x180, 8):
-                q = struct.unpack_from("<Q", d, k)[0]
-                i1, i2 = struct.unpack_from("<ii", d, k)
-                f = struct.unpack_from("<d", d, k)[0]
-                log(f"    +0x{k:03x} {q:016x} int({i1},{i2}) dbl({f:.6g}){' PTR' if ptr_ok(q) else ''}")
-            # 타일 배열 찾기: 포인터 칸 → 그 배열 원소 안 어딘가에 'DNAV' 머리를 가리키는 포인터
-            for k in range(0, 0x180, 8):
-                arr = struct.unpack_from("<Q", d, k)[0]
-                if not ptr_ok(arr):
-                    continue
-                first = rd(arr, 0x100)
-                if not first:
-                    continue
-                for ho in range(0, 0x100 - 8, 8):
-                    hp = struct.unpack_from("<Q", first, ho)[0]
-                    if not ptr_ok(hp):
-                        continue
-                    h = rd(hp, 4)
-                    if h and struct.unpack_from("<I", h)[0] == MAGIC:
-                        log(f"\n  ★ 타일 배열 = dtNavMesh+0x{k:x} → 0x{arr:x}, 원소 안 header 오프셋 +0x{ho:x}")
-                        scan_tiles(ue, rd, ptr_ok, arr, ho, me, log)
-                        return
-    log("타일 배열을 못 찾았어(구조가 다름). 위 덤프로 다시 봐야 함.")
-
-
-def scan_tiles(ue, rd, ptr_ok, arr, ho, me, log):
-    # 원소 크기 찾기: 다음 원소의 header도 DNAV이거나 0인 간격
-    first = rd(arr, 0x400)
-    sizes = []
-    for sz in range(0x40, 0x200, 8):
-        ok = 0
-        for i in range(1, 6):
-            b = rd(arr + i * sz + ho, 8)
+            h, d = struct.unpack_from("<Q", b, hdr_off)[0], struct.unpack_from("<Q", b, data_off)[0]
+            if h and h == d:
+                ok += 1
+            elif h or d:
+                bad += 1
+        if ok >= 5 and bad == 0:
+            stride = s
+            break
+    log(f"타일 구조체 크기 0x{stride:x}" if stride else "구조체 크기 못 찾음")
+    if not stride:
+        return
+    n_scan = min(max_tiles, 20000)
+    used, total = [], 0
+    with open(DUMP, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"meta": {"me": me, "orig": orig, "tile": [tw, th], "stride": stride, "hdr_off": hdr_off,
+                                     "data_off": data_off, "bits": [salt_bits, tile_bits, poly_bits],
+                                     "tile0": base64.b64encode(rd(tiles, stride)).decode()}}) + "\n")
+        for i in range(n_scan):
+            b = rd(tiles + i * stride, stride)
             if not b:
                 break
-            hp = struct.unpack_from("<Q", b)[0]
-            if hp == 0:
+            h = struct.unpack_from("<Q", b, hdr_off)[0]
+            if not h or not ptr_ok(h):
                 continue
-            h = rd(hp, 4) if ptr_ok(hp) else None
-            if h and struct.unpack_from("<I", h)[0] == MAGIC:
-                ok += 1
-            else:
-                ok = -99
-        if ok > 0:
-            sizes.append((ok, sz))
-    log("  원소 크기 후보(맞은 수, 크기)", sizes[:6])
-    log("  첫 원소(8바이트씩):", " ".join(f"{struct.unpack_from('<Q', first, k)[0]:x}" for k in range(0, 0xa0, 8)))
-    hp = struct.unpack_from("<Q", first, ho)[0]
-    hb = rd(hp, 0x100)
-    ints = struct.unpack_from("<16i", hb, 0)
-    log("  첫 타일 header 정수 16개(magic,version,x,y,layer,userId,polyCount,vertCount,maxLink,detailMesh,detailVert,"
-        "detailTri,bvNode,offMeshCon,offMeshBase,…):", ints)
-    log("  header 뒤 실수(double)", [round(v, 2) for v in struct.unpack_from("<16d", hb, 0x40)])
-    log("  header 뒤 실수(float)", [round(v, 2) for v in struct.unpack_from("<24f", hb, 0x40)])
-    log("  첫 원소 포인터들 앞 64바이트 실수(double) — 꼭짓점 배열 후보:")
-    for k in range(0, 0xa0, 8):
-        p = struct.unpack_from("<Q", first, k)[0]
-        if ptr_ok(p) and p != hp:
-            b = rd(p, 48)
-            if b:
-                log(f"    +0x{k:x}: dbl {[round(v, 1) for v in struct.unpack_from('<6d', b)]} flt {[round(v, 1) for v in struct.unpack_from('<6f', b)]}")
-    if not sizes:
-        return
-    sz = sizes[0][1]
-    n, polys, verts = 0, 0, 0
-    for i in range(4096):
-        b = rd(arr + i * sz + ho, 8)
-        if not b:
-            break
-        p = struct.unpack_from("<Q", b)[0]
-        if not p:
-            continue
-        h = rd(p, 0x40) if ptr_ok(p) else None
-        if not h or struct.unpack_from("<I", h)[0] != MAGIC:
-            continue
-        v = struct.unpack_from("<16i", h)
-        n += 1
-        polys += v[6]
-        verts += v[7]
-    log(f"  타일(원소 크기 0x{sz:x}로 4096칸 훑음): 쓰는 타일 {n}개, 다각형 {polys}, 꼭짓점 {verts}")
-    if me:
-        log(f"  비교용 내 위치(언리얼) {tuple(round(v) for v in me)} → Recast 좌표는 보통 (-x, z, -y)")
+            size = struct.unpack_from("<i", b, size_off)[0]
+            if not 0 < size < 4_000_000:
+                continue
+            data = rd(h, size)
+            if not data:
+                continue
+            used.append(i)
+            total += size
+            if total <= CAP:
+                f.write(json.dumps({"i": i, "struct": base64.b64encode(b).decode(),
+                                    "data": base64.b64encode(data).decode()}) + "\n")
+    log(f"쓰는 타일 {len(used)}개, 덩어리 합계 {total / 1e6:.1f}MB (보낸 것 {min(total, CAP) / 1e6:.1f}MB)")
+    if used:
+        h = struct.unpack_from("<Q", rd(tiles + used[0] * stride, stride), hdr_off)[0]
+        hb = rd(h, 0xc0)
+        log("첫 타일 머리 정수 24개:", struct.unpack_from("<24i", hb, 0))
+        log("머리 double(0x30~):", [round(v, 1) for v in struct.unpack_from("<18d", hb, 0x30)])
 
 
 if __name__ == "__main__":
