@@ -48,6 +48,9 @@ def main():
     clicker = screen.Clicker(ue, ue.p.pid)
     gamewin.focus_game()
     time.sleep(0.8)
+    for _ in range(3):                                   # 지난번에 열린 채 남은 창(빠른 이동 확인 등) 닫기
+        pad.tap("B")
+        time.sleep(0.4)
 
     def shot(tag):
         try:
@@ -97,13 +100,19 @@ def main():
     time.sleep(0.4)
     pad.tap("A")
     time.sleep(1.5)
-    shot("panel")
-    for _ in range(downs):                               # 3) 목록에서 고르기
+    shot("map")                                          # 패드 모드: 역에 상호작용하면 지도가 열림(아래쪽 'X 광산 수레 정거장')
+    pad.tap("X")                                         # 3) 정거장 목록 열기 → 십자키 아래 N번 → A(선택) → 확인 창에서 A(빠른 이동)
+    time.sleep(1.2)
+    shot("list")
+    for _ in range(downs):
         pad.tap("DPAD_DOWN", hold=0.08)
-        time.sleep(0.35)
+        time.sleep(0.4)
     shot("pick")
     pad.tap("A")
-    log(f"십자키 아래 {downs}번 + A")
+    time.sleep(1.2)
+    shot("confirm")
+    pad.tap("A")
+    log(f"X → 십자키 아래 {downs}번 → A → 확인 A")
     time.sleep(12)                                       # 4) 이동·로딩 기다리기
     shot("after")
     r.scan()
