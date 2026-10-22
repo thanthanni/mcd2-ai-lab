@@ -240,7 +240,7 @@ if __name__ == "__main__":
         shots = glob.glob(os.path.join(HERE, "tnav_*.jpg"))
         if shots:
             with zipfile.ZipFile(os.path.join(HERE, time.strftime("snaps_tnav_%m%d_%H%M.zip")), "w") as z:
-                for f in sorted(shots)[-12:]:
+                for f in sorted(shots, key=os.path.getmtime)[-12:]:
                     z.write(f, os.path.basename(f))
             for f in shots:
                 os.remove(f)
