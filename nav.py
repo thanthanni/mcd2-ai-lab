@@ -2,7 +2,7 @@
 
 길 찾기: walkmap.json(서버에서 지금까지의 기록으로 만든 '걸어 본 길' 지도, 200칸) + walk_learned.json(이 PC에서 걸으며
 새로 배운 칸·이음, 막혔던 이음)을 합친 그래프에서 A*. 지도에 없는 곳은 가장 가까운 아는 칸까지 지도로, 그다음은 직진.
-움직이기: 경로를 따라 900 앞 지점을 클릭(게임 길찾기가 근처 장애물은 알아서 돌아감), 클릭이 안 되면 스틱.
+움직이기: 다음 꺾이는 점 쪽으로 최대 900 앞을 클릭(게임 클릭 이동은 길찾기 없이 직선이라 모퉁이를 안 넘김), 클릭이 안 되면 스틱.
 막힘(5초 동안 남은 거리가 150 안 줄어듦) 단계: 1 점프 → 2 옆으로 돌기(좌·우) → 3 8방향 점프·구르기 → 4 그 이음을 막힌 것으로
 적고 다시 길 찾기. 다시 찾기를 3번 해도 안 되면 실패로 돌려준다.
 
@@ -33,6 +33,16 @@ STUCK_D = 150       # 남은 거리가 이만큼 안 줄면 막힘
 
 def ckey(p):
     return f"{int(p[0] // CELL)},{int(p[1] // CELL)},{int(p[2] // LAYER)}"
+
+
+def _off_line(a, b, p):
+    """점 p가 선분 a-b에서 벗어난 거리(가로 평면)."""
+    ax, ay, bx, by, px, py = a[0], a[1], b[0], b[1], p[0], p[1]
+    L2 = (bx - ax) ** 2 + (by - ay) ** 2
+    if not L2:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L2))
+    return math.hypot(px - ax - t * (bx - ax), py - ay - t * (by - ay))
 
 
 def ekey(a, b):
@@ -167,11 +177,13 @@ class Nav:
             keys.append(prev[keys[-1]])
         keys.reverse()
         pts = [self.cells[k] for k in keys]
-        # 같은 방향으로 이어지는 점은 줄여서 클릭 지점이 덜 흔들리게
-        out = [pts[0]]
-        for p in pts[1:]:
-            if math.dist(out[-1][:2], p[:2]) >= 400:
-                out.append(p)
+        # 꺾이는 곳만 남김: 건너뛸 점들이 직선에서 60 넘게 벗어나면 그 앞에서 끊는다.
+        # (게임 클릭 이동은 길찾기 없이 직선으로 감, 10-22 장훈 관찰 → 남긴 점 사이 직선이 실제로 걸었던 길이어야 함)
+        out, a = [pts[0]], 0
+        for b in range(2, len(pts)):
+            if any(_off_line(pts[a], pts[b], pts[m]) > 60 for m in range(a + 1, b)):
+                a = b - 1
+                out.append(pts[a])
         out.append(pts[-1])
         if math.dist(pts[-1][:2], g[:2]) > 150:
             out.append(g)
@@ -199,17 +211,14 @@ class Nav:
         return d
 
     def _ahead(self, me):
-        """경로를 따라 LOOK만큼 앞 지점."""
-        px, py, pz = me
-        left = LOOK
-        for q in self.path[self.i:]:
-            seg = math.dist((px, py), q[:2])
-            if seg >= left:
-                t = left / seg
-                return (px + (q[0] - px) * t, py + (q[1] - py) * t, pz + (q[2] - pz) * t)
-            left -= seg
-            px, py, pz = q
-        return self.path[-1]
+        """클릭할 곳: 다음 꺾이는 점까지의 직선 위, 최대 LOOK 앞. 꺾이는 점을 넘어서 찍으면 게임이 직선으로 질러가다
+        벽·낭떠러지에 걸리므로 모퉁이를 넘기지 않는다."""
+        q = self.path[self.i]
+        seg = math.dist(me[:2], q[:2])
+        if seg <= LOOK:
+            return q
+        t = LOOK / seg
+        return (me[0] + (q[0] - me[0]) * t, me[1] + (q[1] - me[1]) * t, me[2] + (q[2] - me[2]) * t)
 
     def step(self):
         now = time.time()
