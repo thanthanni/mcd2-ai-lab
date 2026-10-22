@@ -243,6 +243,14 @@ class Agent(Bot):
             return True
         return False
 
+    def avoid_point(self, px, py):
+        """위험 지역 + 마을(마을로 판정됐던 1000칸과 그 이웃). 마을 안 몹 구역·방향을 탐험 목표로 안 고르게
+        (10-22 12:59 판: 탐험이 마을 쪽 몹 구역을 골라 마을 가장자리에서 들락날락 16번)."""
+        if self.near_danger(px, py):
+            return True
+        cx, cy = int(px // 1000), int(py // 1000)
+        return any((cx + i, cy + j) in self.town_cells for i in (-1, 0, 1) for j in (-1, 0, 1))
+
     def _quest_target(self, x, y, z, now):
         """길찾기 두뇌의 '퀘스트 대상 찾아가기'에서 마을 안 대상(대장장이·마법부여사 등 NPC)은 뺀다.
         (퀘스트가 없을 때 마을 NPC로 걸어 들어갔다가 다시 나오는 왕복이 10-21 시험의 주 원인)"""

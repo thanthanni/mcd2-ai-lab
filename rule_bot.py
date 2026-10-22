@@ -430,8 +430,8 @@ class Bot:
                         c, sn = math.cos(a), math.sin(a)
                         if self.bad_dir.get((round(c, 2), round(sn, 2)), 0) > now:
                             continue
-                        if any(self.near_danger(x + c * t, y + sn * t) for t in (300, 600, 900, 1200, 1500)):
-                            continue                  # 죽었던 곳(깊은 강 등)을 지나는 방향은 안 감
+                        if any(self.avoid_point(x + c * t, y + sn * t) for t in (300, 600, 900, 1200, 1500)):
+                            continue                  # 죽었던 곳(깊은 강 등)·피할 곳(마을 등)을 지나는 방향은 안 감
                         new_cells = sum((int((x + c * t) // 500), int((y + sn * t) // 500), int(z // 400)) not in self.been
                                         for t in (600, 1100, 1600, 2100))
                         sc = new_cells + 0.3 * (c * self.wander[0] + sn * self.wander[1])   # 같은 방향을 조금 선호
@@ -586,13 +586,17 @@ class Bot:
         best = None
         for p in self._spawn_pts():
             d = math.hypot(p[0] - x, p[1] - y)
-            if not 600 < d < 8000 or abs(p[2] - z) > 600 or self.near_danger(p[0], p[1]):
+            if not 600 < d < 8000 or abs(p[2] - z) > 600 or self.avoid_point(p[0], p[1]):
                 continue
             if self.spawn_seen.get(self._spawn_key(p[0], p[1]), 0) + 240 > now:
                 continue
             if not best or d < best[0]:
                 best = (d, p)
         return best[1] if best else None
+
+    def avoid_point(self, px, py):
+        """탐험 목표로 피할 자리(기본: 위험 지역). 학습 봇은 마을도 더함."""
+        return self.near_danger(px, py)
 
     def near_danger(self, px, py, r=450):
         return any(math.hypot(px - dx_, py - dy_) < r for dx_, dy_ in self.danger)
