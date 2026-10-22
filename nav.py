@@ -1,7 +1,7 @@
 """걷기 담당(10-22 새로 뗌). "이 좌표까지 가"만 한다. 끼임 탈출·못 가는 길 판단·낭떠러지 점프는 전부 여기에만 둔다.
 
 길 찾기: walkmap.json(서버에서 지금까지의 기록으로 만든 '걸어 본 길' 지도, 200칸) + walk_learned.json(이 PC에서 걸으며
-새로 배운 칸·이음, 막혔던 이음)을 합친 그래프에서 A*. 지도에 없는 곳은 가장 가까운 아는 칸까지 지도로, 그다음은 직진.
+새로 배운 칸·이음, 막혔던 이음)을 합친 그래프에서 A*. 지도에 연결된 경로가 없으면 failed(미확인 구간 직진 금지).
 움직이기: 다음 꺾이는 점 쪽으로 최대 900 앞을 클릭(게임 클릭 이동은 길찾기 없이 직선이라 모퉁이를 안 넘김), 클릭이 안 되면 스틱.
 막힘(5초 동안 남은 거리가 150 안 줄어듦) 단계: 1 점프 → 2 옆으로 돌기(좌·우) → 3 8방향 점프·구르기 → 4 그 이음을 막힌 것으로
 적고 다시 길 찾기. 다시 찾기를 3번 해도 안 되면 실패로 돌려준다.
@@ -166,8 +166,9 @@ class Nav:
         g = self.goal
         s, sd = self._nearest(me, 800)
         t, td = self._nearest(g)
-        if not s or not t:
-            return [g]
+        # 지도 끝에서 목표까지의 미확인 구간을 직선으로 잇지 않는다.
+        if not s or not t or math.dist(self.cells[t][:2], g[:2]) > getattr(self, "tol", 250) or abs(self.cells[t][2] - g[2]) >= 400:
+            return []
         now = time.time()
         blocked = {k for k, until in self.learned["blocked"].items() if until > now}
 
@@ -198,7 +199,7 @@ class Nav:
                     dist[v], prev[v] = nd, u
                     heapq.heappush(pq, (nd + h(v), v))
         if t not in dist:
-            return [g]
+            return []
         keys = [t]
         while keys[-1] != s:
             keys.append(prev[keys[-1]])
@@ -266,6 +267,10 @@ class Nav:
                 self.mesh_fn = None
         if not self.path:
             self.path, self.i = self.plan(me), 0
+            if not self.path:
+                self.pad.stick(0, 0)
+                self.log("[걷기] 연결된 경로 없음: 미확인 구간 직진 중단")
+                return "failed"
             self.best, self.best_t = self.remaining(me), now
         # 지나간 점 넘기기(점에 닿았거나 다음 점이 더 가까워졌으면)
         while self.i < len(self.path) - 1:
