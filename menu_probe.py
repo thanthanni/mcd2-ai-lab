@@ -16,6 +16,8 @@ try:
     import screen
     from PIL import ImageGrab
     p = winproc.Process()
+    import gamewin
+    gamewin.focus_game(p.pid)
     hwnd = screen.game_hwnd(p.pid)
     if not hwnd or screen.u32.GetForegroundWindow() != hwnd:
         raise RuntimeError('게임 창이 맨 앞이 아니라 촬영하지 않음')
@@ -24,6 +26,7 @@ try:
         raise RuntimeError('게임 창 크기 없음')
     image = ImageGrab.grab(bbox=(x, y, x+w, y+h))
     name = time.strftime('menu_probe_%m%d_%H%M%S.png')
+    image.thumbnail((1280, 720))
     image.save(os.path.join(HERE, name))
     with zipfile.ZipFile(os.path.join(HERE, 'snaps_menu_probe.zip'), 'w', zipfile.ZIP_DEFLATED) as z:
         z.write(os.path.join(HERE, name), name)
