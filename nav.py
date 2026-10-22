@@ -270,6 +270,8 @@ class Nav:
             self.pad.stick(*self.to_stick(dx, dy))
             self.pad.tap("A")
         elif self.level in (2, 3):
+            self.pad.tap("B")                        # 메뉴가 남아 있으면 닫기(A가 메뉴 안에서 '선택'이 되지 않게 먼저)
+            time.sleep(0.3)
             self.stats["detours"] += 1
             side = 1 if self.level == 2 else -1
             self.action, self.action_until = (dx - dy * side * 1.5, dy + dx * side * 1.5), now + 1.5
@@ -277,6 +279,8 @@ class Nav:
         elif self.level == 4:
             self.stats["wedge"] += 1
             self.log("[걷기] 막힘 → 8방향 점프·구르기")
+            self.pad.tap("B")
+            time.sleep(0.3)
             x0, y0 = me[:2]
             for k in range(16):
                 a = (k % 8) * math.pi / 4 + (0.4 if k >= 8 else 0)
