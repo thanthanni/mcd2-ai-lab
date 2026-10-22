@@ -314,7 +314,7 @@ class Agent(Bot):
                 self.town_b = now
             x, y, z = self.pos3
             tgt = self.field_pos
-            sp = [p for p in self._spawn_pts() if (int(p[0] // 1000), int(p[1] // 1000)) not in self.town_cells
+            sp = [p for p in self._spawn_pts() if not self.avoid_point(p[0], p[1])
                   and 1500 < math.hypot(p[0] - x, p[1] - y) < 9000 and abs(p[2] - z) < 800]
             if sp:                                    # 마을 밖 가장 가까운 몹 구역이 저장된 필드보다 가까우면 그쪽으로
                 near = min(sp, key=lambda p: math.hypot(p[0] - x, p[1] - y))
