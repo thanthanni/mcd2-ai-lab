@@ -280,7 +280,7 @@ def main():
                      and not os.path.basename(p).startswith("play_")]
             n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
             print(f"[자동 실행] 결과 {n}개 보냄", flush=True)
-            if not stopped and time.time() - t0 < 120 and "probe" not in bat:   # 2분도 못 가고 끝났으면 오류(탐색 도구는 원래 짧음): 작업을 '안 한 것'으로 되돌려 20분 뒤 다시
+            if not stopped and time.time() - t0 < 120 and not any(w in bat for w in ("probe", "check", "cycle", "reset")):   # 2분도 못 가고 끝났으면 오류(탐색·진단 도구는 원래 짧음, 10-23 진단이 20분마다 되풀이됨): 작업을 '안 한 것'으로 되돌려 20분 뒤 다시
                 try:
                     os.remove(LAST)
                 except OSError:
