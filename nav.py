@@ -260,6 +260,11 @@ class Nav:
         self.level += 1
         self.best_t = now                            # 다음 단계까지 다시 5초
         if self.level == 1:
+            # 제자리 = 메뉴·도움말 창이 열려 있을 수도 있음(10-22 18:1x 첫 판: '플레이 방법' 창을 보고 서 있음) → B로 닫고 점프
+            self.pad.stick(0, 0)
+            for _ in range(2):
+                self.pad.tap("B")
+                time.sleep(0.3)
             self.stats["jumps"] += 1
             self.action, self.action_until = (dx, dy), now + 1.0
             self.pad.stick(*self.to_stick(dx, dy))
