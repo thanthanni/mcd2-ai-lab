@@ -74,7 +74,7 @@ def main():
 
     def mesh_fn():
         actor = next(o for o in ue.find_instances("LovikaRecastNavMesh") if not ue.objname(o).startswith("Default__"))
-        return navmesh.NavMesh(navmesh.read_tiles(ue, actor))
+        return navmesh.read_navmesh(ue, actor)
 
     nav = navmod.Nav(bot.r, pad, bot.clicker, bot.to_stick, log, mesh_fn=mesh_fn)
 
@@ -95,7 +95,8 @@ def main():
         nav.goto(goal, tol=230)
         nav.path = []
         t0, st = time.time(), "moving"
-        while time.time() - t0 < limit:
+        budget_set = False
+        while time.time() - t0 < limit and time.time() < run_deadline:
             tick = time.time()
             try:
                 hp, _ = bot.r.hp(bot.r.player)
@@ -103,6 +104,9 @@ def main():
                     pad.reset()
                     return "died", time.time() - t0
                 st = nav.step()
+                if not budget_set and nav.path:
+                    limit = max(limit, 60 + nav.remaining(bot.r.loc(bot.r.player)) / 250)
+                    budget_set = True
                 if tick - getattr(walk, "tr", 0) > 0.5:
                     walk.tr = tick
                     me = bot.r.loc(bot.r.player)
@@ -177,6 +181,7 @@ def main():
         return True
 
     t0, tries = time.time(), []
+    run_deadline = t0 + SECONDS
     log(f"빠른 이동 + 걷기 시험 {SECONDS:.0f}초")
     while time.time() - t0 < SECONDS - 60:
         S = stations()

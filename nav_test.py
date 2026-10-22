@@ -74,9 +74,9 @@ def main():
     try:
         import navmesh
         actor = next(o for o in ue.find_instances("LovikaRecastNavMesh") if not ue.objname(o).startswith("Default__"))
-        m0 = navmesh.NavMesh(navmesh.read_tiles(ue, actor))
+        m0 = navmesh.read_navmesh(ue, actor)
         log(f"게임 길찾기 지도 읽음: 다각형 {len(m0)}개")
-        mesh_fn = lambda: navmesh.NavMesh(navmesh.read_tiles(ue, actor))   # noqa: E731
+        mesh_fn = lambda: navmesh.read_navmesh(ue, actor)   # noqa: E731
     except Exception as e:
         log("게임 길찾기 지도 못 읽음(걸어 본 길 지도만 씀):", e)
     nav = navmod.Nav(bot.r, pad, bot.clicker, bot.to_stick, log, mesh_fn=mesh_fn)

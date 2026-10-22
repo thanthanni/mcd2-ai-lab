@@ -29,7 +29,7 @@ def ptr_ok(p):
     return 0x10000 < p < 0x7FFFFFFFFFFF
 
 
-def read_tiles(ue, nav_actor, limit=20000):
+def read_tiles(ue, nav_actor, limit=20000, runtime=None):
     """메모리 → [data bytes, ...] (쓰는 타일만)."""
     impl = ue.q(nav_actor + ACTOR_IMPL)
     if ue.q(impl) != nav_actor:
@@ -46,10 +46,33 @@ def read_tiles(ue, nav_actor, limit=20000):
         size = struct.unpack_from("<i", raw, i * TILE_STRIDE + T_SIZE)[0]
         if 0 < size < 4_000_000:
             try:
-                out.append(ue.read(h, size))
+                data = ue.read(h, size)
+                out.append(data)
+                if runtime is not None:
+                    tr = raw[i*TILE_STRIDE:(i+1)*TILE_STRIDE]
+                    count, capacity = struct.unpack_from('<II', tr, 0x98)
+                    lp, dp = struct.unpack_from('<Q', tr, 0x20)[0], struct.unpack_from('<Q', tr, 0x90)[0]
+                    ml = struct.unpack_from('<H', data, 16)[0]
+                    rec = {'index':i, 'salt':struct.unpack_from('<I',tr)[0], 'maxlinks':ml, 'links':b'', 'dynamic':b''}
+                    runtime.append(rec)
+                    if ml < 16384:
+                        rec['links'] = ue.read(lp, ml*16)
+                    if 0 < count <= capacity < 16384 and ptr_ok(dp):
+                        rec['dynamic'] = ue.read(dp, count*16)
             except Exception:
                 pass
     return out
+
+
+def read_navmesh(ue, actor):
+    dt = ue.q(ue.q(actor + ACTOR_IMPL) + 8)
+    if struct.unpack('<3i', ue.read(dt + 0xf0, 12)) != (17, 16, 31):
+        raise RuntimeError("내비 메시 참조 비트가 바뀜")
+    runtime = []
+    blobs = read_tiles(ue, actor, runtime=runtime)
+    mesh = NavMesh(blobs)
+    mesh.add_runtime_links(runtime)
+    return mesh
 
 
 class NavMesh:
@@ -58,8 +81,14 @@ class NavMesh:
         self.center = []
         self.adj = []        # 다각형별 [(이웃, 통로 a, 통로 b)]  통로는 언리얼 (X, Y, Z)
         self.grid = {}       # (gx, gy) 1000칸 → 다각형 번호들
+        self.tile_ground, self.tile_off, self.tile_first = [], [], []
+        self.jump_edges, self.jump_pairs = {}, {}
         edges, border = {}, {}
         for d in blobs:
+            ground, off, first = {}, {}, {}
+            self.tile_ground.append(ground)
+            self.tile_off.append(off)
+            self.tile_first.append(first)
             ver, npoly, nvert, tx, ty = struct.unpack_from("<iHHii", d, 0)
             if ver != 7 or HDR + nvert * 24 + npoly * 32 > len(d):
                 continue
@@ -69,10 +98,14 @@ class NavMesh:
             for k in range(npoly):
                 f = struct.unpack_from("<I6H6HHBB", d, po + k * 32)
                 n, area = f[14], f[15] & 0x3f
+                first[k] = f[0]
+                if (f[15] >> 6) == 1 and n == 2 and area:
+                    off[k] = tuple(vs[i] for i in f[1:3])
                 if n < 3 or (f[15] >> 6) == 1 or area == 0:     # 1 = 오프메시 연결(점프 링크), 0 = 못 걷는 곳
                     continue
                 pv = [vs[i] for i in f[1:1 + n]]
                 pid = len(self.verts)
+                ground[k] = pid
                 self.verts.append(pv)
                 cx = sum(p[0] for p in pv) / n
                 cy = sum(p[1] for p in pv) / n
@@ -114,6 +147,48 @@ class NavMesh:
                     pa[o], pb[o] = lo, hi
                     pa[2] = pb[2] = (a[2] + b[2] + c[2] + e[2]) / 4
                     self._link(p, q, tuple(pa), tuple(pb))
+
+    def add_runtime_links(self, runtime):
+        """엔진이 실제 연결한 방향만 사용한다. 단차의 역방향 연결을 임의로 만들지 않는다."""
+        refs, links, off = {}, {}, {}
+        for ti, rec in enumerate(runtime):
+            if ti >= len(self.tile_ground):
+                break
+            base = (rec['salt'] << 47) | (rec['index'] << 31)
+            for poly, pid in self.tile_ground[ti].items():
+                refs[base | poly] = pid
+            for poly, points in self.tile_off[ti].items():
+                off[base | poly] = points
+            for poly, first in self.tile_first[ti].items():
+                out, seen, idx = [], set(), first
+                while idx != 0xffffffff and idx not in seen and len(seen) < 256:
+                    seen.add(idx)
+                    raw, j = ((rec['links'], idx) if idx < rec['maxlinks'] else
+                              (rec['dynamic'], idx - rec['maxlinks']))
+                    if j * 16 + 16 > len(raw):
+                        break
+                    ref, idx, edge, _, _, _ = struct.unpack_from('<QIBBBB', raw, j * 16)
+                    if ref:
+                        out.append((ref, edge))
+                links[base | poly] = out
+        for ref, pid in refs.items():
+            for conn, _ in links.get(ref, ()):
+                if conn not in off:
+                    continue
+                exits = links.get(conn, ())
+                entry = next((edge for back, edge in exits if back == ref and edge in (0, 1)), None)
+                if entry is None:
+                    continue
+                a, b = off[conn][entry], off[conn][1-entry]
+                for dest, edge in exits:
+                    q = refs.get(dest)
+                    if q is None or q == pid or edge != 1-entry:
+                        continue
+                    if any(n == q for n, _, _ in self.adj[pid]):
+                        continue
+                    self.adj[pid].append((q, a, b))
+                    self.jump_edges[(pid, q)] = (a, b)
+                    self.jump_pairs[(a, b)] = True
 
     def _link(self, p, q, a, b):
         self.adj[p].append((q, a, b))
@@ -176,7 +251,10 @@ class NavMesh:
             cu = self.center[u]
             for v, a, b in self.adj[u]:
                 m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-                w = math.hypot(m[0] - cu[0], m[1] - cu[1]) + math.hypot(self.center[v][0] - m[0], self.center[v][1] - m[1])
+                if (u, v) in self.jump_edges:
+                    w = math.dist(cu, a) + math.dist(a, b) + math.dist(b, self.center[v]) + 100
+                else:
+                    w = math.hypot(m[0] - cu[0], m[1] - cu[1]) + math.hypot(self.center[v][0] - m[0], self.center[v][1] - m[1])
                 nd = g[u] + w
                 if nd < g.get(v, 1e18):
                     g[v], prev[v] = nd, (u, a, b)
@@ -188,10 +266,19 @@ class NavMesh:
         k = t
         while k != s:
             u, a, b = prev[k]
-            portals.append((u, a, b))
+            portals.append((u, k, a, b))
             k = u
         portals.reverse()
-        return self._funnel(start, goal, portals)
+        points, walk, anchor = [], [], start
+        for u, v, a, b in portals:
+            if (u, v) in self.jump_edges:
+                points.extend(self._funnel(anchor, a, walk))
+                points.append(b)
+                anchor, walk = b, []
+            else:
+                walk.append((u, a, b))
+        points.extend(self._funnel(anchor, goal, walk))
+        return points
 
     def _funnel(self, start, goal, portals):
         """깔때기(simple stupid funnel): 통로마다 진행 방향 기준 (왼쪽, 오른쪽)을 정해서 꺾이는 점만 남긴다."""

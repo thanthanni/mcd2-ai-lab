@@ -257,7 +257,7 @@ class Nav:
         if math.dist(me[:2], self.goal[:2]) < self.tol and abs(me[2] - self.goal[2]) < 400:
             self.pad.stick(0, 0)
             return "arrived"
-        if self.mesh_fn and now - self.mesh_t > 20:           # 주변 지도는 움직이면 바뀜(구역별로 불러옴) → 다시 읽고 경로 새로
+        if self.mesh_fn and now - self.mesh_t > 20 and now >= self.action_until:           # 주변 지도는 움직이면 바뀜(구역별로 불러옴) → 다시 읽고 경로 새로
             self.mesh_t = now
             try:
                 self.mesh = self.mesh_fn()
@@ -272,10 +272,24 @@ class Nav:
                 self.log("[걷기] 연결된 경로 없음: 미확인 구간 직진 중단")
                 return "failed"
             self.best, self.best_t = self.remaining(me), now
+            self.log(f"[걷기] 연결 경로 {len(self.path)}점, 남은 {self.best:.0f}")
         # 지나간 점 넘기기(점에 닿았거나 다음 점이 더 가까워졌으면)
         while self.i < len(self.path) - 1:
             a, b = self.path[self.i], self.path[self.i + 1]
-            if math.dist(me[:2], a[:2]) < PASS or math.dist(me[:2], b[:2]) < math.dist(a[:2], b[:2]) - 50:
+            if (a, b) in getattr(self.mesh, "jump_pairs", {}):
+                if math.dist(me[:2], a[:2]) < 100 and abs(me[2] - a[2]) < 180:
+                    self.pad.stick(*self.to_stick(b[0]-me[0], b[1]-me[1]))
+                    self.pad.tap("A")
+                    self.action, self.action_until = (b[0]-me[0], b[1]-me[1]), now + 0.8
+                    self.stats["jumps"] += 1
+                    self.i += 1
+                    self.log("[걷기] 지도 단차 점프", tuple(round(v) for v in a), "→", tuple(round(v) for v in b))
+                    return "moving"
+                break
+            radius = 80 if self.mesh is not None else PASS
+            close = math.dist(me[:2], a[:2]) < radius and abs(me[2] - a[2]) < 180
+            passed = self.mesh is None and math.dist(me[:2], b[:2]) < math.dist(a[:2], b[:2]) - 50
+            if close or passed:
                 self.i += 1
             else:
                 break
