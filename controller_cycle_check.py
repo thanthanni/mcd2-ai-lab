@@ -32,6 +32,7 @@ try:
   assert gamewin.controller_prompt_matches(frame(),template),'연결 해제 창이 재현되지 않음'
   print('CHECK disconnected prompt reproduced',flush=True)
   second=Pad()
+  second.tap('LEFT_THUMB')
   time.sleep(1)
   assert not gamewin.controller_prompt_matches(frame(),template),'재연결 후 창이 남음'
   print('CHECK startup recovered',flush=True)
