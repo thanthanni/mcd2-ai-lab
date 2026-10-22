@@ -78,12 +78,9 @@ def main():
         return min(stations, key=lambda s: math.hypot(s[1][0] - p[0], s[1][1] - p[1]))
 
     me = r.loc(r.player)
-    home = [s for s in stations if s[0] == "Brave Haven"]
-    if not home:
-        log("마을 역을 못 찾았어")
-        return
-    hp = home[0][1]
-    log("시작 위치", tuple(round(v) for v in me), "마을 역까지", round(math.hypot(hp[0] - me[0], hp[1] - me[1])))
+    home = nearest(me)                                   # 가장 가까운 역에서 출발
+    hp = home[1]
+    log("시작 위치", tuple(round(v) for v in me), f"가까운 역 {home[0]}까지", round(math.hypot(hp[0] - me[0], hp[1] - me[1])))
     t0 = time.time()
     while time.time() - t0 < 60:                         # 1) 역까지 걸어가기
         me = r.loc(r.player)
