@@ -47,7 +47,7 @@ def main():
     pad = Pad()
     clicker = screen.Clicker(ue, ue.p.pid)
     gamewin.focus_game()
-    time.sleep(0.8)
+    time.sleep(2.5)                                      # 새 가상 패드를 게임이 알아차릴 시간(바로 누르면 무시됨, 10-22 확인)
     for _ in range(3):                                   # 지난번에 열린 채 남은 창(빠른 이동 확인 등) 닫기
         pad.tap("B")
         time.sleep(0.4)
