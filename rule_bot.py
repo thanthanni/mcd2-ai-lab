@@ -65,6 +65,8 @@ class Pad:
                     raise
                 time.sleep(5)
         self.B = vg.XUSB_BUTTON
+        import gamewin
+        gamewin.dismiss_controller_prompt(self)
 
     def stick(self, x, y):
         self.p.left_joystick_float(max(-1, min(1, x)), max(-1, min(1, y)))

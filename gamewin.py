@@ -76,3 +76,47 @@ def prepare(wait_unplug=60) -> None:
         ok = False
     print("게임 창을 앞으로 가져왔어." if ok else "게임 창을 못 가져왔어. 게임 창을 직접 클릭해 줘(3초).", flush=True)
     time.sleep(1 if ok else 3)
+
+
+def controller_prompt_matches(image, template):
+    """확인한 연결 해제 문구·오류 코드·A 버튼의 밝은 글자 모양을 비교한다."""
+    from PIL import ImageChops
+    crop = image.resize((960, 540)).crop((350, 215, 610, 347)).convert("L")
+    actual = crop.point(lambda v: 255 if v > 160 else 0, mode="1")
+    expected = template.convert("L").point(lambda v: 255 if v > 160 else 0, mode="1")
+    union = ImageChops.logical_or(actual, expected).histogram()[255]
+    overlap = ImageChops.logical_and(actual, expected).histogram()[255]
+    # shortcut: 한국어·현재 UI 크기의 확인 창, 언어나 UI 배율 변경 시 템플릿 갱신.
+    return bool(union and overlap / union > 0.78)
+
+
+def dismiss_controller_prompt(pad):
+    """가상 패드 재연결 후, 알려진 연결 해제 창만 확인하고 닫는다."""
+    from pathlib import Path
+    from PIL import Image, ImageGrab
+    import screen
+    pid = _game_pid()
+    hwnd = screen.game_hwnd(pid) if pid else None
+    if not hwnd:
+        return
+    if u32.GetForegroundWindow() != hwnd and not focus_game(pid):
+        return
+    with Image.open(Path(__file__).with_name("controller_disconnected.png")) as template:
+        for _ in range(12):
+            if u32.GetForegroundWindow() != hwnd:
+                return
+            x, y, w, h = screen.client_rect(hwnd)
+            if w <= 0 or h <= 0:
+                return
+            image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+            if controller_prompt_matches(image, template):
+                pad.tap("A")
+                time.sleep(0.6)
+                if u32.GetForegroundWindow() != hwnd:
+                    raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
+                image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                if controller_prompt_matches(image, template):
+                    raise RuntimeError("컨트롤러 연결 해제 창을 닫지 못했어")
+                print("컨트롤러 연결 해제 창 확인 후 닫았어.", flush=True)
+                return
+            time.sleep(0.25)
