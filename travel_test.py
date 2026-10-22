@@ -82,7 +82,7 @@ def main():
     hp = home[1]
     log("시작 위치", tuple(round(v) for v in me), f"가까운 역 {home[0]}까지", round(math.hypot(hp[0] - me[0], hp[1] - me[1])))
     t0 = time.time()
-    while time.time() - t0 < 60:                         # 1) 역까지 걸어가기
+    while time.time() - t0 < 120:                        # 1) 역까지 걸어가기
         me = r.loc(r.player)
         d = math.hypot(hp[0] - me[0], hp[1] - me[1])
         if d < 250:
