@@ -113,6 +113,7 @@ class Bot:
         self.wander_until = 0.0
         self.been = set()             # 가 본 칸(가로세로 500 = 블록 약 5칸, 높이 400마다 다른 층)
         self.bad_dir = {}             # 막혔던 탐험 방향 → 다시 써도 되는 시각
+        self.wander_goal, self.wander_best, self.wander_t = (0.0, 0.0, 0.0), 0.0, 0.0
         self.last_focus = 0.0
         self.last_guide = 0.0
         self.retreat_until = 0.0
@@ -428,9 +429,22 @@ class Bot:
                     if best is None:                  # 사방이 막혔으면 기억을 지우고 뒤로
                         self.bad_dir.clear()
                         best = (-self.wander[0], -self.wander[1])
-                    self.wander, self.wander_until = best, now + 5
+                    self.wander, self.wander_until = best, now + 15
+                    # 목표점을 '지금 자리에서 1800 앞'으로 고정(전에는 매번 내 앞 1500을 찍어서 목표가 같이 움직였음 → 벽 앞 왕복)
+                    self.wander_goal = (x + best[0] * 1800, y + best[1] * 1800, z)
+                    self.wander_best, self.wander_t = 1800.0, now
                 dx, dy = self.wander
-                self.go(x, y, z, (x + dx * 1500, y + dy * 1500, z), dx, dy)
+                gx, gy, gz = self.wander_goal
+                gd = math.hypot(gx - x, gy - y)
+                if gd < self.wander_best - 300:          # 300 넘게 가까워지면 진행 중
+                    self.wander_best, self.wander_t = gd, now
+                if gd < 300:                             # 도착 → 다음 방향
+                    self.wander_until = 0
+                elif now - self.wander_t > 6:            # 6초 동안 안 가까워짐 = 못 가는 곳 → 그 방향은 45초 동안 안 감
+                    self.bad_dir[(round(dx, 2), round(dy, 2))] = now + 45
+                    self.wander_until = 0
+                    self.stats["unreachable_dir"] = self.stats.get("unreachable_dir", 0) + 1
+                self.go(x, y, z, (gx, gy, gz), gx - x, gy - y)
                 self._unstick(x, y, now, act)
                 act["do"] = "explore"
                 return act
