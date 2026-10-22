@@ -50,8 +50,9 @@ def ekey(a, b):
 
 
 class Nav:
-    def __init__(self, reader, pad, clicker, to_stick, log=print):
+    def __init__(self, reader, pad, clicker, to_stick, log=print, mesh_fn=None):
         self.r, self.pad, self.clicker, self.to_stick, self.log = reader, pad, clicker, to_stick, log
+        self.mesh_fn, self.mesh, self.mesh_t = mesh_fn, None, 0.0   # 게임 길찾기 지도(navmesh.NavMesh), 20초마다 다시 읽음
         self.cells, self.adj = {}, {}
         self.learned = {"cells": {}, "edges": [], "blocked": {}}
         self._load()
@@ -62,7 +63,7 @@ class Nav:
         self.action_until, self.action = 0.0, None
         self.prev = None          # (시각, 위치) — 걸어서 이어진 칸 배우기
         self.last_save = time.time()
-        self.stats = {"replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0}
+        self.stats = {"mesh_paths": 0, "wm_paths": 0, "replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0}
         try:
             self.jumps = json.load(open(JUMPS))
         except (OSError, ValueError):
@@ -135,6 +136,32 @@ class Nav:
         return best, bd
 
     def plan(self, me):
+        """게임 길찾기 지도(내 주변만 있음)로 갈 수 있는 데까지 롤처럼 돌아서 가고, 그 너머는 걸어 본 길 지도로.
+        1) 목표까지 게임 지도 경로가 있으면 그것  2) 없으면 걸어 본 길 경로 중 게임 지도로 닿는 가장 먼 점까지 게임 지도,
+        나머지는 걸어 본 길  3) 게임 지도를 못 읽으면 걸어 본 길만."""
+        wm = self._plan_wm(me)
+        m = self.mesh
+        if m is None:
+            self.stats["wm_paths"] += 1
+            return wm
+        try:
+            p = m.path(me, self.goal)
+            if p:
+                self.stats["mesh_paths"] += 1
+                return p
+            for j in range(len(wm) - 1, -1, -1):
+                if math.dist(wm[j][:2], me[:2]) < 300:
+                    break
+                p = m.path(me, wm[j])
+                if p:
+                    self.stats["mesh_paths"] += 1
+                    return p + list(wm[j + 1:])
+        except Exception as e:
+            self.log("[걷기] 게임 지도 경로 오류:", e)
+        self.stats["wm_paths"] += 1
+        return wm
+
+    def _plan_wm(self, me):
         """A*로 경로 점 목록을 만든다. 막힌 이음은 피하고, 위험 지역 칸은 아주 비싸게."""
         g = self.goal
         s, sd = self._nearest(me, 800)
@@ -229,6 +256,14 @@ class Nav:
         if math.dist(me[:2], self.goal[:2]) < self.tol and abs(me[2] - self.goal[2]) < 400:
             self.pad.stick(0, 0)
             return "arrived"
+        if self.mesh_fn and now - self.mesh_t > 20:           # 주변 지도는 움직이면 바뀜(구역별로 불러옴) → 다시 읽고 경로 새로
+            self.mesh_t = now
+            try:
+                self.mesh = self.mesh_fn()
+                self.path = []
+            except Exception as e:
+                self.log("[걷기] 게임 지도 못 읽음:", e)
+                self.mesh_fn = None
         if not self.path:
             self.path, self.i = self.plan(me), 0
             self.best, self.best_t = self.remaining(me), now

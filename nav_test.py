@@ -70,7 +70,16 @@ def main():
             continue
     station = station or (14819.0, -5500.0, 4663.0)
     legs = [("역", station), ("필드", FIELD)]
-    nav = navmod.Nav(bot.r, pad, bot.clicker, bot.to_stick, log)
+    mesh_fn = None
+    try:
+        import navmesh
+        actor = next(o for o in ue.find_instances("LovikaRecastNavMesh") if not ue.objname(o).startswith("Default__"))
+        m0 = navmesh.NavMesh(navmesh.read_tiles(ue, actor))
+        log(f"게임 길찾기 지도 읽음: 다각형 {len(m0)}개")
+        mesh_fn = lambda: navmesh.NavMesh(navmesh.read_tiles(ue, actor))   # noqa: E731
+    except Exception as e:
+        log("게임 길찾기 지도 못 읽음(걸어 본 길 지도만 씀):", e)
+    nav = navmod.Nav(bot.r, pad, bot.clicker, bot.to_stick, log, mesh_fn=mesh_fn)
 
     def shot(tag):
         try:
@@ -175,7 +184,7 @@ def main():
                "left": round(math.dist(me[:2], goal[:2])), "died": died, "fights": fights, **d}
         results.append(rec)
         log(f"  → {st} {took:.0f}초, 남은 거리 {rec['left']}, 막힘 점프 {d['jumps']} 돌기 {d['detours']} "
-            f"끼임 {d['wedge']} 다시찾기 {d['replans']} 사망 {died} 싸움 {fights}")
+            f"끼임 {d['wedge']} 다시찾기 {d['replans']} 사망 {died} 싸움 {fights} 경로(게임지도/걸어본길) {d['mesh_paths']}/{d['wm_paths']}")
         k += 1
     nav.save()
     pad.reset()
