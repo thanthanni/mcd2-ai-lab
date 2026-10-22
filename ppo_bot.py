@@ -540,7 +540,14 @@ class Agent(Bot):
         return m
 
 
+HANG = os.path.join(HERE, time.strftime("hang_%m%d_%H%M.txt"))
+
+
 def main():
+    # 시작 단계 멈춤 감시: 준비(패드·메모리·보정)가 3분 넘게 안 끝나면 어디서 멈췄는지 적고 끝냄(10-22 12:18 판이 시작에서 멈춤)
+    import faulthandler
+    faulthandler.dump_traceback_later(180, exit=True, file=open(HANG, "w", encoding="utf-8"))
+    log("준비 시작")
     app = find_ohs_app()
     if not app:
         log("Offline Hero Sync 폴더를 못 찾았어.")
@@ -550,9 +557,12 @@ def main():
     import uemem    # noqa
     import gamewin
     gamewin.prepare()
+    log("패드 연결")
     pad = Pad()
+    log("메모리 연결")
     ue = uemem.UE(winproc.Process(), rescan=True)
     agent = Agent(ue, pad)
+    log("봇 준비")
     try:
         import screen
         agent.clicker = screen.Clicker(ue, ue.p.pid)    # 길찾기 두뇌는 클릭 이동(게임 길찾기)을 씀
@@ -618,7 +628,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
     # 멈춤 감시: 90초 동안 한 걸음도 못 가면 모든 스레드가 어디서 멈췄는지 hang_*.txt에 적고 봇을 끝냄
     # (10-22 10:59 판이 전투 중 통째로 멈춤 → 45분 감시가 끌 때까지 버린 원인 찾기용)
     import faulthandler
-    hang_f = open(os.path.join(HERE, time.strftime("hang_%m%d_%H%M.txt")), "w", encoding="utf-8")
+    hang_f = open(HANG, "a", encoding="utf-8")
     obs, _, _, _ = agent.observe()
     if True:
         while time.time() - t0 < SECONDS:
