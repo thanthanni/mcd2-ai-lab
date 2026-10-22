@@ -80,14 +80,18 @@ def prepare(wait_unplug=60) -> None:
 
 def controller_prompt_matches(image, template):
     """확인한 연결 해제 문구·오류 코드·A 버튼의 밝은 글자 모양을 비교한다."""
-    from PIL import ImageChops
+    from PIL import ImageChops, ImageFilter
     crop = image.resize((960, 540)).crop((350, 215, 610, 347)).convert("L")
-    actual = crop.point(lambda v: 255 if v > 160 else 0, mode="1")
-    expected = template.convert("L").point(lambda v: 255 if v > 160 else 0, mode="1")
-    union = ImageChops.logical_or(actual, expected).histogram()[255]
-    overlap = ImageChops.logical_and(actual, expected).histogram()[255]
+    actual = crop.point(lambda v: 255 if v > 160 else 0)
+    expected = template.convert("L").point(lambda v: 255 if v > 160 else 0)
+    na, ne = actual.histogram()[255], expected.histogram()[255]
+    if not na or not ne:
+        return False
+    # 캡처 축소·JPEG의 글자 경계 오차 1픽셀만 허용하고 양쪽 글자 모양을 확인한다.
+    covered = ImageChops.multiply(expected, actual.filter(ImageFilter.MaxFilter(3))).histogram()[255] / ne
+    precise = ImageChops.multiply(actual, expected.filter(ImageFilter.MaxFilter(3))).histogram()[255] / na
     # shortcut: 한국어·현재 UI 크기의 확인 창, 언어나 UI 배율 변경 시 템플릿 갱신.
-    return bool(union and overlap / union > 0.78)
+    return covered > 0.90 and precise > 0.90
 
 
 def dismiss_controller_prompt(pad):
