@@ -271,7 +271,10 @@ class Nav:
                 self.pad.stick(0, 0)
                 self.log("[걷기] 연결된 경로 없음: 미확인 구간 직진 중단")
                 return "failed"
-            self.best, self.best_t = self.remaining(me), now
+            # 지도 갱신이 제자리 감시 시간을 초기화하면 끼임 탈출이 계속 미뤄진다.
+            self.best = self.remaining(me)
+            if not self.best_t:
+                self.best_t = now
             self.log(f"[걷기] 연결 경로 {len(self.path)}점, 남은 {self.best:.0f}")
         # 지나간 점 넘기기(점에 닿았거나 다음 점이 더 가까워졌으면)
         while self.i < len(self.path) - 1:
