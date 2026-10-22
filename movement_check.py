@@ -24,16 +24,23 @@ def main():
   actor=next(o for o in ue.find_instances('LovikaRecastNavMesh') if not ue.objname(o).startswith('Default__'))
   mesh=navmesh.read_navmesh(ue,actor)
   me=bot.r.loc(bot.r.player)
-  stations=[]
-  for o in ue.find_instances('BP_MinecartStation_C'):
-   try:
-    if ue.fname(o+ue.field(o,'NameOnMap').offset)=='ForestA1-Outpost':stations.append(bot.r.loc(o))
-   except Exception:continue
-  if not stations:raise RuntimeError('숲 역 없음')
-  path=mesh.path(me,stations[0])
-  if not path:raise RuntimeError('연결 경로 없음')
+  poly=mesh.find(me)
+  if poly is None:raise RuntimeError('현재 위치의 보행 지도 없음')
+  candidates=[mesh.center[poly]]+[mesh.center[k] for k,*_ in mesh.adj[poly] if (poly,k) not in mesh.jump_edges]
+  path=None
+  for point in sorted(candidates,key=lambda p:abs(math.dist(p[:2],me[:2])-300)):
+   distance=math.dist(point[:2],me[:2])
+   if not 150 < distance < 600 or abs(point[2]-me[2])>200:continue
+   route=mesh.path(me,point)
+   if not route or any((a,b) in mesh.jump_pairs for a,b in zip(route,route[1:])):continue
+   if sum(math.dist(a[:2],b[:2]) for a,b in zip([me]+route,route))>900:continue
+   path=route
+   break
+  if not path:raise RuntimeError('입력을 시험할 짧은 보행 경로 없음')
   target=next((p for p in path if math.dist(p[:2],me[:2])>120),None)
   if target is None:raise RuntimeError('시험할 경로 점 없음')
+  assert 120 < math.dist(target[:2],me[:2]) < 900
+  assert all((a,b) not in mesh.jump_pairs for a,b in zip(path,path[1:]))
   if not gamewin.focus_game(ue.p.pid):raise RuntimeError('게임 포커스 실패')
   time.sleep(0.5)
   print('TARGET',json.dumps({'me':me,'target':target,'route':path[:6]}),flush=True)
