@@ -129,7 +129,14 @@ def dismiss_controller_prompt(pad):
                     raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
                 image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
                 if controller_prompt_matches(image, template):
-                    raise RuntimeError("컨트롤러 연결 해제 창을 닫지 못했어")
+                    # 새 패드의 A를 받지 않는 경우에도 같은 확인 버튼만 마우스로 누른다.
+                    screen.click(x + w / 2, y + h * (328 / 540))
+                    time.sleep(0.6)
+                    if u32.GetForegroundWindow() != hwnd:
+                        raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
+                    image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                    if controller_prompt_matches(image, template):
+                        raise RuntimeError("컨트롤러 연결 해제 창을 닫지 못했어")
                 print("컨트롤러 연결 해제 창 확인 후 닫았어.", flush=True)
                 return
             time.sleep(0.25)
