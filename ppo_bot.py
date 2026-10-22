@@ -134,6 +134,8 @@ class Agent(Bot):
         self.town_t, self.field_saved = None, 0.0
         self.last_fight = self.last_combat = 0.0
         self.prev_loot, self.loot_names, self.chest_tried, self.pickups = {}, {}, {}, 0
+        self.prev_em = self.prev_xp = None
+        self.emeralds_got = self.xp_got = 0.0
         self.trail, self.escape_to, self.escape_until = [], None, 0.0
         self.pending_danger, self.last_taken = None, 0.0
         self.mode, self.last_do = "start", None
@@ -485,12 +487,21 @@ class Agent(Bot):
                 if n not in self.loot_names:
                     self.loot_names[n] = 0
                     log(f"[물건] 처음 본 것: {n} 거리 {dd:.0f}")
-        for o, (n, dd, _) in self.prev_loot.items():
-            if dd < 250 and o not in loot and "Chest" not in n:
-                r += 1.0
-                self.pickups += 1
-                self.loot_names[n] = self.loot_names.get(n, 0) + 1
         self.prev_loot, self.near_loot = near, near
+        # 에메랄드·경험치(ATR_Currency.Emeralds, ATR_XP.XP, 10-22 wallet_probe로 찾음): 늘어난 만큼 점수
+        # 항아리 깨기·상자 열기·줍기가 전부 에메랄드로 잡혀서 '사라짐'으로 세던 옛 방식보다 정확함
+        try:
+            em = self.r.attr(self.r.player, "ATR_Currency", "Emeralds")
+            xp = self.r.attr(self.r.player, "ATR_XP", "XP")
+        except Exception:
+            em = xp = None
+        if em is not None and self.prev_em is not None and 0 < em - self.prev_em < 5000:
+            r += 0.3 * min(em - self.prev_em, 20)
+            self.pickups += 1
+            self.emeralds_got += em - self.prev_em
+        if xp is not None and self.prev_xp is not None and 0 < xp - self.prev_xp < 100000:
+            self.xp_got += xp - self.prev_xp
+        self.prev_em, self.prev_xp = em, xp
         obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
         hostile = [f[0] for f in row["foes"] if not any(k in f[6] for k in PASSIVE)]
@@ -743,12 +754,13 @@ def train_loop(agent, net, opt, dev, seconds, total):
             bt = [sum(ep["acts"][k::len(BUTTONS)]) for k in range(len(BUTTONS))]
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
                    "dealt": round(ep["dealt"]), "kills": ep["kills"], "taken": round(ep["taken"]), "deaths": ep["deaths"],
-                   "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "pickups": agent.pickups, "entropy": round(float(ent.item()), 2),
+                   "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "pickups": agent.pickups,
+                   "emeralds": round(agent.emeralds_got), "xp": round(agent.xp_got), "entropy": round(float(ent.item()), 2),
                    "move": mv, "buttons": dict(zip(BUTTONS, bt))}
             with open(LOG, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 주움 {rec['pickups']} 버튼 {rec['buttons']}")
+                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 에메랄드 +{rec['emeralds']} 경험치 +{rec['xp']} 버튼 {rec['buttons']}")
     return total
 
 
