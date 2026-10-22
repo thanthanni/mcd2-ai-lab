@@ -540,11 +540,42 @@ class Agent(Bot):
         if xp is not None and self.prev_xp is not None and 0 < xp - self.prev_xp < 100000:
             self.xp_got += xp - self.prev_xp
         self.prev_em, self.prev_xp = em, xp
+        # 장비 줍기(10-22 장훈 요청 '무기 먹으면 점수'): 내 PickupItemComponent.LootItemsCollected(GameplayTag 배열,
+        # 10-22 catalog: 264개)가 늘면 새로 주운 것. 새 태그 이름에 무기 낱말이 있으면 +5, 다른 장비면 +2.
+        r += self.item_reward()
         obs = np.array(kfeat.feats(row), dtype=np.float32)
         self.mask = self.knowledge_mask(row)
         hostile = [f[0] for f in row["foes"] if not any(k in f[6] for k in PASSIVE)]
         self.write_trace({"foe": round(min(hostile)) if hostile else None, "r": round(r, 2)})
         return obs, r, dead, d
+
+    WEAPON_WORDS = ("Weapon", "Melee", "Ranged", "Sword", "Axe", "Bow", "Crossbow", "Spear", "Hammer", "Dagger",
+                    "Glaive", "Scythe", "Mace", "Katana", "Claymore", "Gauntlet", "Sickle", "Pick")
+
+    def item_reward(self):
+        try:
+            me = self.r.player
+            comp = self.ue.q(me + self.r._off(me, "PickupItemComponent"))
+            arr = comp + self.r._off(comp, "LootItemsCollected")
+            data, num = self.ue.q(arr), self.ue.i32(arr + 8)
+        except Exception:
+            return 0.0
+        prev, self.prev_items = getattr(self, "prev_items", None), num
+        if prev is None or not 0 < num - prev <= 20:          # 처음이거나 줄었거나(불러오기) 너무 크게 뛰면 점수 없음
+            return 0.0
+        gain = 0.0
+        for k in range(prev, num):
+            try:
+                name = self.ue.fname(data + k * 8)
+            except Exception:
+                name = "?"
+            weapon = any(w in name for w in self.WEAPON_WORDS)
+            gain += 5.0 if weapon else 2.0
+            self.items_got = getattr(self, "items_got", 0) + 1
+            self.weapons_got = getattr(self, "weapons_got", 0) + (1 if weapon else 0)
+            log(f"[장비] 주움: {name}{' (무기)' if weapon else ''}")
+            self.snap("item")
+        return gain
 
     def knowledge_mask(self, row):
         """게임 지식으로 '지금 의미 없는 버튼'을 막는다(무엇을 할지는 신경망이 정함).
@@ -815,12 +846,12 @@ def train_loop(agent, net, opt, dev, seconds, total):
             rec = {"time": round(time.time()), "steps": total, "n": len(O), "reward": round(ep["reward"], 1),
                    "dealt": round(ep["dealt"]), "kills": ep["kills"], "taken": round(ep["taken"]), "deaths": ep["deaths"],
                    "cells": len(agent.visited), "unstuck": agent.unstuck, "explore": ep["explore"], "pickups": agent.pickups,
-                   "emeralds": round(agent.emeralds_got), "xp": round(agent.xp_got), "entropy": round(float(ent.item()), 2),
+                   "emeralds": round(agent.emeralds_got), "items": getattr(agent, "items_got", 0), "weapons": getattr(agent, "weapons_got", 0), "xp": round(agent.xp_got), "entropy": round(float(ent.item()), 2),
                    "move": mv, "buttons": dict(zip(BUTTONS, bt))}
             with open(LOG, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
-                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 에메랄드 +{rec['emeralds']} 경험치 +{rec['xp']} 버튼 {rec['buttons']}")
+                f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 에메랄드 +{rec['emeralds']} 장비 {rec['items']}(무기 {rec['weapons']}) 경험치 +{rec['xp']} 버튼 {rec['buttons']}")
     faulthandler.cancel_dump_traceback_later()
     return total
 
