@@ -132,7 +132,11 @@ class Clicker:
         if not self.rect or now - self.rect_at > 5:
             self.rect, self.rect_at = client_rect(self.hwnd), now
         c = self.cam.read()
-        for t in (1.0, 0.8, 0.6, 0.45, 0.3):           # 화면 밖이면 내 쪽으로 당겨서 화면 안 점을 찍음
+        # 화면 밖이면 내 쪽으로 당겨서 화면 안 점을 찍음. 먼 목표(10-22 역까지 4000)는 비율만 줄이면 끝까지 화면 밖이라
+        # 한 번도 못 찍었음 → 내 위치에서 900·700·500·350 떨어진 점도 차례로 시도.
+        L = math.dist(pt[:2], me[:2]) or 1.0
+        ts = [t for t in (1.0, 0.8, 0.6, 0.45, 0.3) if L * t <= 1400] + [k / L for k in (900, 700, 500, 350) if k < L]
+        for t in ts:
             p = tuple(me[i] + (pt[i] - me[i]) * t for i in range(3))
             sp = project(c, p, self.rect)
             if sp and self._safe(*sp):
