@@ -110,6 +110,12 @@ def dismiss_controller_prompt(pad):
                 return
             image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
             if controller_prompt_matches(image, template):
+                time.sleep(2.5)  # 게임이 새 가상 패드를 인식한 뒤에 확인 입력.
+                if u32.GetForegroundWindow() != hwnd:
+                    raise RuntimeError("연결 해제 창 확인 전 게임 포커스가 바뀌었어")
+                image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                if not controller_prompt_matches(image, template):
+                    return
                 pad.tap("A")
                 time.sleep(0.6)
                 if u32.GetForegroundWindow() != hwnd:
