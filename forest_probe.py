@@ -58,12 +58,10 @@ try:
             lp = struct.unpack_from('<Q',tr,0x20)[0]
             item['links'] = base64.b64encode(ue.read(lp,maxlinks*16)).decode()
             dp = struct.unpack_from('<Q',tr,0x90)[0]
-            nc, count = struct.unpack_from('<II',tr,0x98)
-            item['chunks'],item['count'] = nc,count
-            if 0 < nc < 256 and 0 < count <= nc*128:
-                cp = struct.unpack('<'+'Q'*nc,ue.read(dp,nc*8))
-                dyn = b''.join(ue.read(p,min(128,max(0,count-k*128))*16) for k,p in enumerate(cp) if count>k*128)
-                item['dynamic'] = base64.b64encode(dyn).decode()
+            count, capacity = struct.unpack_from('<II',tr,0x98)
+            item['capacity'],item['count'] = capacity,count
+            if 0 < count <= capacity < 16384:
+                item['dynamic'] = base64.b64encode(ue.read(dp,count*16)).decode()
         except Exception as e:
             item['error']=str(e)
         runtime.append(item)
