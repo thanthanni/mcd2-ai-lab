@@ -103,10 +103,10 @@ def dismiss_controller_prompt(pad):
     hwnd = screen.game_hwnd(pid) if pid else None
     if not hwnd:
         return
-    if u32.GetForegroundWindow() != hwnd and not focus_game(pid):
+    if u32.GetForegroundWindow() != hwnd:
         return
     with Image.open(Path(__file__).with_name("controller_disconnected.png")) as template:
-        for attempt in range(12):
+        for _ in range(12):
             if u32.GetForegroundWindow() != hwnd:
                 return
             x, y, w, h = screen.client_rect(hwnd)
@@ -114,8 +114,6 @@ def dismiss_controller_prompt(pad):
                 return
             image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
             matches = controller_prompt_matches(image, template)
-            if attempt in (0, 11):
-                print(f"연결 해제 창 검사: 화면 {w}x{h}, 일치 {matches}", flush=True)
             if matches:
                 if pad:
                     time.sleep(2.5)  # 게임이 새 가상 패드를 인식한 뒤에 확인 입력.

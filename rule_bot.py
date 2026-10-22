@@ -65,8 +65,26 @@ class Pad:
                     raise
                 time.sleep(5)
         self.B = vg.XUSB_BUTTON
+        import atexit
+        atexit.register(self.close)
         import gamewin
         gamewin.dismiss_controller_prompt(self)
+
+    def close(self):
+        device = self.p
+        if device is None:
+            return
+        try:
+            self.reset()
+        except Exception as e:
+            print("패드 중립 처리 실패:", e, flush=True)
+        self.p = None
+        del device  # 연결 해제 알림이 뜬 뒤에 처리하도록 실제 장치를 먼저 해제.
+        import gamewin
+        try:
+            gamewin.dismiss_controller_prompt(None)
+        except Exception as e:
+            print("패드 종료 후 오류 창 처리 실패:", e, flush=True)
 
     def stick(self, x, y):
         self.p.left_joystick_float(max(-1, min(1, x)), max(-1, min(1, y)))

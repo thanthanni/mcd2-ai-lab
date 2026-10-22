@@ -44,6 +44,7 @@ def main():
     ue = uemem.UE(winproc.Process(), rescan=True)
     r = Reader(ue)
     r.scan()
+    gamewin.prepare()
     pad = Pad()
     clicker = screen.Clicker(ue, ue.p.pid)
     gamewin.focus_game()
