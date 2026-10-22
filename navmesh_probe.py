@@ -155,4 +155,12 @@ if __name__ == "__main__":
         log("오류:", traceback.format_exc())
     with open(OUT, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    try:                                     # 걷기 시험(20분)이 끝날 때까지 안 기다리고 바로 보냄
+        import uploader
+        for name in (OUT, DUMP):
+            if os.path.exists(name):
+                uploader.send_file(os.path.basename(name), title="navmesh")
+        os.replace(DUMP, DUMP + ".sent") if os.path.exists(DUMP) else None
+    except Exception as e:
+        print("바로 보내기 실패", e)
     print("\n결과를 저장했어:", OUT)
