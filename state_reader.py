@@ -34,6 +34,7 @@ def log(*a):
 from state_probe import find_ohs_app  # noqa: E402
 
 
+VALID_CLS: set = set()   # 훑을 때 실제로 본 클래스 주소(모든 Reader가 같이 씀)
 LOOT = ("Pickup", "Loot", "Chest", "Emerald", "Drop")     # 줍는 것·상자 클래스 이름 조각
 LOOT_SKIP = ("W_", "GA_", "GE_", "GCN_", "AS_", "BTTask", "BP_Loot_Table", "DT_")
 
@@ -69,6 +70,10 @@ class Reader:
         c = self.ue.cls(o)
         k = (c, name)
         if k not in self.off:
+            # 이미 사라진 객체(죽은 몹·주운 물건)는 클래스 자리에 쓰레기 값이 있어서, 그걸로 부모 클래스를 따라가면
+            # 끝없이 돌 수 있음(10-22 11:25 봇 멈춤: uemem.supers 무한 반복). 훑을 때 본 진짜 클래스만 허용.
+            if VALID_CLS and c not in VALID_CLS:
+                raise ValueError("사라진 객체(클래스 모름)")
             self.off[k] = self.ue.field(o, name).offset
         return self.off[k]
 
@@ -78,6 +83,7 @@ class Reader:
         player, mobs, npcs, atr, navpaths, trail, guides, quest, loot = None, {}, set(), {}, [], None, [], {}, {}
         for o in ue.iter_objects():
             try:
+                VALID_CLS.add(ue.cls(o))
                 ch = self._chain(ue.cls(o))
                 n = ch[0] if ch else ""
                 if n.startswith("ATR_"):
