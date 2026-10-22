@@ -1,4 +1,4 @@
-"""현재 경로 첫 점으로 클릭과 스틱을 각각 1초 시험하고 실제 변위를 비교."""
+"""현재 경로 첫 점으로 클릭1초와 짧은 스틱 입력의 실제 변위를 비교."""
 import json,math,sys,time,traceback,zipfile
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
@@ -50,10 +50,13 @@ def main():
     bot.pad=pad
     time.sleep(2.5)
    p0=bot.r.loc(bot.r.player)
+   if mode=='stick' and math.dist(target[:2],p0[:2])<120:
+    print(json.dumps({'input':mode,'skipped':'target already reached'}),flush=True)
+    continue
    if mode=='click':accepted=bot.clicker.click_world(target,p0)
    else:
     pad.stick(*bot.to_stick(target[0]-p0[0],target[1]-p0[1]));accepted=True
-   time.sleep(1)
+   time.sleep(1 if mode=='click' else 0.15)
    if pad:pad.reset()
    time.sleep(0.15)
    p1=bot.r.loc(bot.r.player)
