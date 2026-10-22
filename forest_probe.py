@@ -75,7 +75,7 @@ try:
               'tiles':len(blobs), 'polygons':len(mesh), 'stations':stations,
               'runtime':runtime, 'bits':struct.unpack('<3i',ue.read(dt+0xf0,12)),
               'reachable_stations':{name:path for name,pos in stations.items() if (path:=mesh.path(me,pos))}}
-    print(json.dumps(record, ensure_ascii=False), flush=True)
+    print(json.dumps({k:v for k,v in record.items() if k!='runtime'}, ensure_ascii=False), flush=True)
     with zipfile.ZipFile(HERE/'snaps_forest_probe.zip', 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('forest_probe.json', json.dumps(record,ensure_ascii=False))
         for i, data in enumerate(blobs):
