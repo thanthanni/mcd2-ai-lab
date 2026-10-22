@@ -608,6 +608,10 @@ def main():
 def train_loop(agent, net, opt, dev, seconds, total):
     SECONDS = seconds
     t0 = time.time()
+    # 멈춤 감시: 90초 동안 한 걸음도 못 가면 모든 스레드가 어디서 멈췄는지 hang_*.txt에 적고 봇을 끝냄
+    # (10-22 10:59 판이 전투 중 통째로 멈춤 → 45분 감시가 끌 때까지 버린 원인 찾기용)
+    import faulthandler
+    hang_f = open(os.path.join(HERE, time.strftime("hang_%m%d_%H%M.txt")), "w", encoding="utf-8")
     obs, _, _, _ = agent.observe()
     if True:
         while time.time() - t0 < SECONDS:
@@ -616,6 +620,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
             exploring = False
             while len(O) < ROLL and time.time() - t0 < SECONDS:
                 tick = time.time()
+                faulthandler.dump_traceback_later(90, exit=True, file=hang_f)
                 if tick < agent.escape_until and agent.escape_to and agent.pos:   # 지형 피해: 안전했던 자리로 되돌아감
                     agent.mode, agent.last_do = "escape", "back"
                     ex, ey = agent.escape_to[0] - agent.pos[0], agent.escape_to[1] - agent.pos[1]
@@ -706,6 +711,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                     agent.check_stuck()
                 if dead:                              # 안전장치: 죽으면 멈추고 기다렸다가 A, 되살아나면 필드로
                     agent.revive(t0, SECONDS)
+            faulthandler.dump_traceback_later(300, exit=True, file=hang_f)   # 학습(갱신) 단계는 넉넉히
             if len(O) < 64:
                 break
             # PPO 갱신(GAE)
@@ -761,6 +767,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             log(f"[{total}걸음] 점수 {rec['reward']} 처치 {rec['kills']} 준 피해 {rec['dealt']} 받은 피해 {rec['taken']} "
                 f"사망 {rec['deaths']} 새 칸 {rec['cells']} 탈출 {rec['unstuck']} 길찾기 {rec['explore']} 에메랄드 +{rec['emeralds']} 경험치 +{rec['xp']} 버튼 {rec['buttons']}")
+    faulthandler.cancel_dump_traceback_later()
     return total
 
 
