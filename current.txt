@@ -1,1 +1,1 @@
-33_path_test.bat
+34_wallet_probe.bat

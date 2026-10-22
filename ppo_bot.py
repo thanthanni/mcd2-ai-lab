@@ -221,6 +221,7 @@ class Agent(Bot):
             elif now - self.pot_hit[1] > 6:                       # 6초 때려도 안 깨지면 포기
                 self.chest_tried[o] = now + 600
             return True
+        self.last_do_note = n                                 # 기록용: 어떤 물건을 쫓는지
         if "Chest" in n and dd < 220:
             self.pad.reset()
             ok = self.clicker.rclick_world(p) if self.clicker else False
@@ -640,7 +641,7 @@ def train_loop(agent, net, opt, dev, seconds, total):
                         exploring = True
                     try:
                         if agent.loot_step():         # 줍는 것·상자가 가까우면 그쪽 먼저
-                            agent.mode, agent.last_do = "loot", "go_loot"
+                            agent.mode, agent.last_do = "loot", "go_loot:" + str(getattr(agent, "last_do_note", ""))[:40]
                         else:
                             act_ = agent.step() or {}
                             agent.mode, agent.last_do = "explore", act_.get("do")
