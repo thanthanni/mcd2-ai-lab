@@ -101,8 +101,8 @@ def main():
     pad.tap("X")                                         # 3) 정거장 목록 열기 → 십자키 아래 N번 → A(선택) → 확인 창에서 A(빠른 이동)
     time.sleep(1.2)
     shot("list")
-    for _ in range(downs):
-        pad.tap("DPAD_DOWN", hold=0.08)
+    for _ in range(abs(downs)):                          # 목록 초점은 지금 있는 역에서 시작(10-22 확인) → 음수면 위로
+        pad.tap("DPAD_DOWN" if downs > 0 else "DPAD_UP", hold=0.08)
         time.sleep(0.4)
     shot("pick")
     pad.tap("A")
