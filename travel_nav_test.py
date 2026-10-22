@@ -117,6 +117,26 @@ def main():
         pad.stick(0, 0)
         return (st if st != "moving" else "timeout"), time.time() - t0
 
+    TABS = ["보관함", "수집품", "지도", "파티", "DLC", "시스템"]
+
+    def active_tab():
+        """메뉴 위쪽 탭 줄에서 주황 밑줄(y 6.8%) 가운데 x로 지금 탭 번호. 메뉴가 아니면 None.
+        탭 가운데(화면 폭 비율): 보관함 .083 수집품 .161 지도 .240 파티 .317 DLC .396 시스템 .474"""
+        try:
+            from PIL import ImageGrab
+            x, y, w, h = screen.client_rect(bot.clicker.hwnd)
+            row = ImageGrab.grab(bbox=(x, y + int(h * 0.062), x + w // 2, y + int(h * 0.074)))
+            px = row.load()
+            xs = [i for i in range(row.width) for j in range(row.height)
+                  if px[i, j][0] > 200 and 90 < px[i, j][1] < 190 and px[i, j][2] < 90]
+            if len(xs) < 20:
+                return None
+            cx = (min(xs) + max(xs)) / 2 / w
+            k = round((cx - 0.083) / 0.078)
+            return k if 0 <= k < len(TABS) else None
+        except Exception:
+            return None
+
     def travel(st_pos, downs):
         pad.stick(0, 0)
         time.sleep(0.5)
@@ -124,6 +144,15 @@ def main():
         time.sleep(0.4)
         pad.tap("A")
         time.sleep(1.5)
+        # 역 상호작용은 메뉴를 '마지막에 본 탭'으로 연다(19:5x 시험: 파티 탭으로 열려서 36번 다 실패) → 지도 탭으로 맞춤
+        for _ in range(8):
+            k = active_tab()
+            log(f"  메뉴 탭 {TABS[k] if k is not None else '모름'}")
+            if k is None or k == 2:
+                break
+            pad.tap("RIGHT_SHOULDER" if k < 2 else "LEFT_SHOULDER")
+            time.sleep(0.7)
+        shot("map")
         pad.tap("X")
         time.sleep(1.2)
         for _ in range(abs(downs)):
