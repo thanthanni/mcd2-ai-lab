@@ -13,7 +13,8 @@ def main():
  ue=uemem.UE(winproc.Process(),rescan=True)
  import hashlib,inspect
  print('STARTUP',json.dumps({'prompt_handler':hasattr(gamewin,'dismiss_controller_prompt'),'pad_has_handler':'dismiss_controller_prompt' in inspect.getsource(Pad.__init__),'gamewin_hash':hashlib.sha256(Path(gamewin.__file__).read_bytes()).hexdigest()[:10]}),flush=True)
- pad=Pad()
+ pad=None
+ bot=None
  try:
   bot=Bot(ue,pad)
   bot.clicker=screen.Clicker(ue,ue.p.pid)
@@ -35,19 +36,25 @@ def main():
   if target is None:raise RuntimeError('시험할 경로 점 없음')
   if not gamewin.focus_game(ue.p.pid):raise RuntimeError('게임 포커스 실패')
   time.sleep(0.5)
-  gamewin.dismiss_controller_prompt(pad)
   print('TARGET',json.dumps({'me':me,'target':target,'route':path[:6]}),flush=True)
   for mode in ('click','stick'):
+   if mode=='stick':
+    pad=Pad()
+    bot.pad=pad
+    time.sleep(2.5)
    p0=bot.r.loc(bot.r.player)
    if mode=='click':accepted=bot.clicker.click_world(target,p0)
    else:
     pad.stick(*bot.to_stick(target[0]-p0[0],target[1]-p0[1]));accepted=True
    time.sleep(1)
-   pad.reset()
+   if pad:pad.reset()
    time.sleep(0.15)
    p1=bot.r.loc(bot.r.player)
    print(json.dumps({'input':mode,'accepted':accepted,'start':p0,'end':p1,'delta':math.dist(p0[:2],p1[:2]),'goal_before':math.dist(p0[:2],target[:2]),'goal_after':math.dist(p1[:2],target[:2])}),flush=True)
-  if screen.u32.GetForegroundWindow()==bot.clicker.hwnd:
+ finally:
+  if bot:bot.stop=True
+  if pad:pad.reset()
+  if bot and bot.clicker and screen.u32.GetForegroundWindow()==bot.clicker.hwnd:
    x,y,w,h=screen.client_rect(bot.clicker.hwnd)
    img=ImageGrab.grab(bbox=(x,y,x+w,y+h))
    img.resize((960,540)).crop((350,215,610,347)).save(HERE/'controller_raw.png')
@@ -56,7 +63,6 @@ def main():
    with zipfile.ZipFile(HERE/'snaps_movement_check.zip','w',zipfile.ZIP_DEFLATED) as z:
     z.write(HERE/'movement_current.jpg','movement_current.jpg')
     z.write(HERE/'controller_raw.png','controller_raw.png')
- finally:pad.reset()
 
 if __name__=='__main__':
  try:main()
