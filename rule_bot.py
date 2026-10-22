@@ -113,6 +113,7 @@ class Bot:
         self.wander_until = 0.0
         self.been = set()             # 가 본 칸(가로세로 500 = 블록 약 5칸, 높이 400마다 다른 층)
         self.bad_dir = {}             # 막혔던 탐험 방향 → 다시 써도 되는 시각
+        self.spawn_pos, self.spawn_seen = {}, {}   # 몹 구역 좌표 / 구역별 마지막 방문(또는 못 감 → 금지) 시각
         self.wander_goal, self.wander_best, self.wander_t = (0.0, 0.0, 0.0), 0.0, 0.0
         self.last_focus = 0.0
         self.last_guide = 0.0
@@ -159,6 +160,7 @@ class Bot:
                     self.r.navpaths, self.r.trail, self.r.guides = fresh.navpaths, fresh.trail, fresh.guides
                     self.r.quest_objs = fresh.quest_objs
                     self.r.loot = fresh.loot
+                    self.r.spawns = fresh.spawns
             except Exception:
                 pass
 
@@ -412,6 +414,15 @@ class Bot:
                         act["do"] = "interact"
                     self._unstick(x, y, now, act)
                     return act
+                if now > self.wander_until:           # 몹 나오는 구역(SpawnVolume) 중 오래 안 간 곳 → 없으면 안 가 본 쪽
+                    sp = self._spawn_goal(x, y, z, now)
+                    if sp:
+                        gx_, gy_ = sp[0] - x, sp[1] - y
+                        n_ = math.hypot(gx_, gy_) or 1
+                        self.wander, self.wander_until = (gx_ / n_, gy_ / n_), now + 25
+                        self.wander_goal = (sp[0], sp[1], z)
+                        self.wander_best, self.wander_t = n_, now
+                        act["spawn"] = round(n_)
                 if now > self.wander_until:           # 할 퀘스트도 몹도 없으면: 안 가 본 쪽으로 탐험
                     best, bs = None, -1.0
                     for k8 in range(8):
@@ -438,10 +449,12 @@ class Bot:
                 gd = math.hypot(gx - x, gy - y)
                 if gd < self.wander_best - 300:          # 300 넘게 가까워지면 진행 중
                     self.wander_best, self.wander_t = gd, now
-                if gd < 300:                             # 도착 → 다음 방향
+                if gd < 400:                             # 도착 → 다음 목표(몹 구역이면 4분 동안 안 고름)
+                    self._spawn_mark(gx, gy, now)
                     self.wander_until = 0
                 elif now - self.wander_t > 6:            # 6초 동안 안 가까워짐 = 못 가는 곳 → 그 방향은 45초 동안 안 감
                     self.bad_dir[(round(dx, 2), round(dy, 2))] = now + 45
+                    self._spawn_mark(gx, gy, now + 600)      # 몹 구역이었으면 10분 동안 안 고름
                     self.wander_until = 0
                     self.stats["unreachable_dir"] = self.stats.get("unreachable_dir", 0) + 1
                 self.go(x, y, z, (gx, gy, gz), gx - x, gy - y)
@@ -547,6 +560,39 @@ class Bot:
                 except Exception:
                     pass
             self.last_fall = now
+
+    def _spawn_pts(self):
+        """몹 나오는 구역 좌표(처음 한 번 읽고 기억; 구역은 움직이지 않음)."""
+        for o in list(getattr(self.r, "spawns", [])):
+            if o in self.spawn_pos:
+                continue
+            try:
+                self.spawn_pos[o] = self.r.loc(o)
+            except Exception:
+                self.spawn_pos[o] = None
+        return [p for p in self.spawn_pos.values() if p]
+
+    def _spawn_key(self, px, py):
+        return (int(px // 400), int(py // 400))
+
+    def _spawn_mark(self, px, py, until):
+        self.spawn_seen[self._spawn_key(px, py)] = until
+
+    def _spawn_near(self, px, py, rad):
+        return any(math.hypot(p[0] - px, p[1] - py) < rad for p in self._spawn_pts())
+
+    def _spawn_goal(self, x, y, z, now):
+        """4분 넘게 안 간, 위험 지역이 아닌, 높이 차 600 안의 가장 가까운 몹 구역(600~8000)."""
+        best = None
+        for p in self._spawn_pts():
+            d = math.hypot(p[0] - x, p[1] - y)
+            if not 600 < d < 8000 or abs(p[2] - z) > 600 or self.near_danger(p[0], p[1]):
+                continue
+            if self.spawn_seen.get(self._spawn_key(p[0], p[1]), 0) + 240 > now:
+                continue
+            if not best or d < best[0]:
+                best = (d, p)
+        return best[1] if best else None
 
     def near_danger(self, px, py, r=450):
         return any(math.hypot(px - dx_, py - dy_) < r for dx_, dy_ in self.danger)

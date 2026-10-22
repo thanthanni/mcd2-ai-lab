@@ -303,7 +303,14 @@ class Agent(Bot):
                 self.pad.tap("B")
                 self.town_b = now
             x, y, z = self.pos3
-            gx, gy = self.field_pos[0] - x, self.field_pos[1] - y
+            tgt = self.field_pos
+            sp = [p for p in self._spawn_pts() if (int(p[0] // 1000), int(p[1] // 1000)) not in self.town_cells
+                  and 1500 < math.hypot(p[0] - x, p[1] - y) < 9000 and abs(p[2] - z) < 800]
+            if sp:                                    # 마을 밖 가장 가까운 몹 구역이 저장된 필드보다 가까우면 그쪽으로
+                near = min(sp, key=lambda p: math.hypot(p[0] - x, p[1] - y))
+                if math.hypot(near[0] - x, near[1] - y) < math.hypot(tgt[0] - x, tgt[1] - y):
+                    tgt = near
+            gx, gy = tgt[0] - x, tgt[1] - y
             k = min(1.0, 1000 / max(math.hypot(gx, gy), 1))
             self.go(x, y, z, (x + gx * k, y + gy * k, z), gx, gy)
             self._unstick(x, y, now, {})
