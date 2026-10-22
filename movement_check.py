@@ -11,6 +11,8 @@ def main():
  from PIL import ImageGrab
  gamewin.prepare()
  ue=uemem.UE(winproc.Process(),rescan=True)
+ import hashlib,inspect
+ print('STARTUP',json.dumps({'prompt_handler':hasattr(gamewin,'dismiss_controller_prompt'),'pad_has_handler':'dismiss_controller_prompt' in inspect.getsource(Pad.__init__),'gamewin_hash':hashlib.sha256(Path(gamewin.__file__).read_bytes()).hexdigest()[:10]}),flush=True)
  pad=Pad()
  try:
   bot=Bot(ue,pad)
@@ -33,6 +35,7 @@ def main():
   if target is None:raise RuntimeError('시험할 경로 점 없음')
   if not gamewin.focus_game(ue.p.pid):raise RuntimeError('게임 포커스 실패')
   time.sleep(0.5)
+  gamewin.dismiss_controller_prompt(pad)
   print('TARGET',json.dumps({'me':me,'target':target,'route':path[:6]}),flush=True)
   for mode in ('click','stick'):
    p0=bot.r.loc(bot.r.player)

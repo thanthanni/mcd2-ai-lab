@@ -102,14 +102,17 @@ def dismiss_controller_prompt(pad):
     if u32.GetForegroundWindow() != hwnd and not focus_game(pid):
         return
     with Image.open(Path(__file__).with_name("controller_disconnected.png")) as template:
-        for _ in range(12):
+        for attempt in range(12):
             if u32.GetForegroundWindow() != hwnd:
                 return
             x, y, w, h = screen.client_rect(hwnd)
             if w <= 0 or h <= 0:
                 return
             image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
-            if controller_prompt_matches(image, template):
+            matches = controller_prompt_matches(image, template)
+            if attempt in (0, 11):
+                print(f"연결 해제 창 검사: 화면 {w}x{h}, 일치 {matches}", flush=True)
+            if matches:
                 time.sleep(2.5)  # 게임이 새 가상 패드를 인식한 뒤에 확인 입력.
                 if u32.GetForegroundWindow() != hwnd:
                     raise RuntimeError("연결 해제 창 확인 전 게임 포커스가 바뀌었어")
