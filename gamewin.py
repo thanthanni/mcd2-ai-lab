@@ -117,14 +117,16 @@ def dismiss_controller_prompt(pad):
             if attempt in (0, 11):
                 print(f"연결 해제 창 검사: 화면 {w}x{h}, 일치 {matches}", flush=True)
             if matches:
-                time.sleep(2.5)  # 게임이 새 가상 패드를 인식한 뒤에 확인 입력.
+                if pad:
+                    time.sleep(2.5)  # 게임이 새 가상 패드를 인식한 뒤에 확인 입력.
                 if u32.GetForegroundWindow() != hwnd:
                     raise RuntimeError("연결 해제 창 확인 전 게임 포커스가 바뀌었어")
                 image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
                 if not controller_prompt_matches(image, template):
                     return
-                pad.tap("A")
-                time.sleep(0.6)
+                if pad:
+                    pad.tap("A")
+                    time.sleep(0.6)
                 if u32.GetForegroundWindow() != hwnd:
                     raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
                 image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
@@ -136,9 +138,9 @@ def dismiss_controller_prompt(pad):
                         raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
                     image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
                     if controller_prompt_matches(image, template):
-                        u32.keybd_event(0x0D, u32.MapVirtualKeyW(0x0D, 0), 0, 0)
+                        u32.keybd_event(0x20, u32.MapVirtualKeyW(0x20, 0), 0, 0)
                         time.sleep(0.08)
-                        u32.keybd_event(0x0D, u32.MapVirtualKeyW(0x0D, 0), 2, 0)
+                        u32.keybd_event(0x20, u32.MapVirtualKeyW(0x20, 0), 2, 0)
                         time.sleep(1.2)
                         if u32.GetForegroundWindow() != hwnd:
                             raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
