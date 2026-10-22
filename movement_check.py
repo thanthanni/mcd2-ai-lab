@@ -49,9 +49,13 @@ def main():
    print(json.dumps({'input':mode,'accepted':accepted,'start':p0,'end':p1,'delta':math.dist(p0[:2],p1[:2]),'goal_before':math.dist(p0[:2],target[:2]),'goal_after':math.dist(p1[:2],target[:2])}),flush=True)
   if screen.u32.GetForegroundWindow()==bot.clicker.hwnd:
    x,y,w,h=screen.client_rect(bot.clicker.hwnd)
-   img=ImageGrab.grab(bbox=(x,y,x+w,y+h));img.thumbnail((960,540))
+   img=ImageGrab.grab(bbox=(x,y,x+w,y+h))
+   img.resize((960,540)).crop((350,215,610,347)).save(HERE/'controller_raw.png')
+   img.thumbnail((960,540))
    img.save(HERE/'movement_current.jpg')
-   with zipfile.ZipFile(HERE/'snaps_movement_check.zip','w',zipfile.ZIP_DEFLATED) as z:z.write(HERE/'movement_current.jpg','movement_current.jpg')
+   with zipfile.ZipFile(HERE/'snaps_movement_check.zip','w',zipfile.ZIP_DEFLATED) as z:
+    z.write(HERE/'movement_current.jpg','movement_current.jpg')
+    z.write(HERE/'controller_raw.png','controller_raw.png')
  finally:pad.reset()
 
 if __name__=='__main__':
