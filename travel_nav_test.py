@@ -44,7 +44,7 @@ def main():
     import screen
     import navmesh
     import nav as navmod
-    from rule_bot import Bot, Pad
+    from rule_bot import Bot, Pad, PASSIVE
     gamewin.prepare()
     pad = Pad()
     ue = uemem.UE(winproc.Process(), rescan=True)
@@ -96,14 +96,47 @@ def main():
         nav.path = []
         t0, st = time.time(), "moving"
         budget_set = False
+        hp_prev, fight_until, last_wedge = None, 0.0, nav.stats["wedge"]
         while time.time() - t0 < limit and time.time() < run_deadline:
             tick = time.time()
             try:
-                hp, _ = bot.r.hp(bot.r.player)
+                hp, hpm = bot.r.hp(bot.r.player)
                 if hp is not None and hp <= 0:
                     pad.reset()
                     return "died", time.time() - t0
-                st = nav.step()
+                # nav_test에서 확인했던 최소 생존 대응: 물약 + 붙어서 피해를 주는 적만 반격.
+                if hp is not None and hpm and hp / hpm < 0.4 and (bot.r.attr(bot.r.player, "ATR_Health", "HealthPotionCharges") or 0) >= 1 and tick - bot.last_potion > 3:
+                    pad.trigger(left=True)
+                    bot.last_potion = tick
+                    log("[이동] 물약 사용")
+                hurt = hp_prev is not None and hp is not None and hp < hp_prev - 0.5
+                hp_prev = hp
+                close = None
+                me = bot.r.loc(bot.r.player)
+                with bot.lock:
+                    mobs = dict(bot.r.mobs)
+                for o, name in mobs.items():
+                    if any(n in name for n in PASSIVE):
+                        continue
+                    try:
+                        mp = bot.r.loc(o)
+                        mh, _ = bot.r.hp(o)
+                        if mh and mh > 0 and math.dist(mp[:2], me[:2]) < 280 and abs(mp[2]-me[2]) < 250:
+                            close = mp
+                            break
+                    except Exception:
+                        continue
+                if close and (hurt or tick < fight_until):
+                    if hurt:
+                        fight_until = tick + 3
+                    pad.stick(*bot.to_stick(close[0]-me[0], close[1]-me[1], 0.25))
+                    pad.tap("X")
+                    nav.best_t = tick
+                else:
+                    st = nav.step()
+                if nav.stats["wedge"] > last_wedge:
+                    shot("wedge")
+                    last_wedge = nav.stats["wedge"]
                 if not budget_set and nav.path:
                     limit = max(limit, 60 + nav.remaining(bot.r.loc(bot.r.player)) / 250)
                     budget_set = True
@@ -111,7 +144,7 @@ def main():
                     walk.tr = tick
                     me = bot.r.loc(bot.r.player)
                     with open(TRACE, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"t": round(tick, 1), "p": [round(v) for v in me], "mode": "tnav", "do": st}) + "\n")
+                        f.write(json.dumps({"t": round(tick, 1), "p": [round(v) for v in me], "mode": "tnav", "do": st, "hp":hp, "waypoint":nav.i, "path_points":len(nav.path)}) + "\n")
                 if st in ("arrived", "failed"):
                     break
             except Exception:
