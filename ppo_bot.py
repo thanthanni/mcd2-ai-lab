@@ -208,7 +208,8 @@ class Agent(Bot):
         now = time.time()
         x, y, z = self.pos3
         cands = [(dd, o, n, p) for o, (n, dd, p) in self.near_loot.items()
-                 if dd < 1200 and self.chest_tried.get(o, 0) < now and not self.near_danger(p[0], p[1])]
+                 if dd < 1200 and "Hidden" not in n                      # 숨은 상자는 드러나기 전엔 못 감(10-22 시험: 시간만 버림)
+                 and self.chest_tried.get(o, 0) < now and not self.near_danger(p[0], p[1])]
         if not cands:
             return False
         dd, o, n, p = min(cands)
@@ -234,7 +235,7 @@ class Agent(Bot):
             self.chest_tried.setdefault(o, 0)
             if not hasattr(self, "loot_go") or self.loot_go[0] != o:
                 self.loot_go = (o, now)
-            elif now - self.loot_go[1] > 15:                      # 15초 안에 못 가면 포기(10분)
+            elif now - self.loot_go[1] > 8:                       # 8초 안에 못 가면 포기(10분)
                 self.chest_tried[o] = now + 600
             return True
         return False
