@@ -8,6 +8,8 @@ daily면 날짜가 바뀔 때마다 다시 한다(하루 한 번).
 """
 from __future__ import annotations
 
+import base64
+import json
 import ctypes
 import ctypes.wintypes as wt
 import glob
@@ -19,7 +21,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RETRY = os.path.join(HERE, "retry_after.txt")
-JOB_URL = "https://raw.githubusercontent.com/thanthanni/mcd2-ai-lab/main/job.txt"
+JOB_URL = "https://api.github.com/repos/thanthanni/mcd2-ai-lab/contents/job.txt"
 RECPID = os.path.join(HERE, "recorder.pid")
 SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt", "retry_after.txt"}
 IDLE_NEEDED = 180
@@ -245,7 +247,9 @@ def main():
                     main.jobchk = time.time()
                     try:
                         import urllib.request
-                        cur = urllib.request.urlopen(JOB_URL, timeout=15).read().decode("utf-8", "ignore").split()
+                        # raw 주소는 새 작업을 올린 뒤에도 옛 번호가 캐시돼서 중단을 놓쳤음(10-23).
+                        payload = json.loads(urllib.request.urlopen(JOB_URL, timeout=15).read())
+                        cur = base64.b64decode(payload["content"], validate=False).decode("utf-8").split()
                         if cur and cur[0] > jid.split("@")[0]:   # 더 새 번호일 때만(캐시된 옛 job.txt에 속지 않게)
                             stopped = "새 작업이 올라옴"
                             subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)

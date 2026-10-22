@@ -148,10 +148,18 @@ def main():
         for _ in range(8):
             k = active_tab()
             log(f"  메뉴 탭 {TABS[k] if k is not None else '모름'}")
-            if k is None or k == 2:
+            if k is None:
+                shot("tab_unknown")
+                log("  탭 판별 실패: 확인 버튼을 누르지 않고 시험 중단")
+                return False
+            if k == 2:
                 break
             pad.tap("RIGHT_SHOULDER" if k < 2 else "LEFT_SHOULDER")
             time.sleep(0.7)
+        if active_tab() != 2:
+            shot("tab_not_map")
+            log("  지도 탭 전환 실패: 확인 버튼을 누르지 않고 시험 중단")
+            return False
         shot("map")
         pad.tap("X")
         time.sleep(1.2)
@@ -166,6 +174,7 @@ def main():
         bot.r.scan()
         nav.mesh_t = 0                         # 새 곳 지도 바로 다시 읽기
         nav.prev = None
+        return True
 
     t0, tries = time.time(), []
     log(f"빠른 이동 + 걷기 시험 {SECONDS:.0f}초")
@@ -190,7 +199,10 @@ def main():
                 pad.tap("A")
                 time.sleep(10)
             continue
-        travel(sp, downs)
+        if not travel(sp, downs):
+            rec["travel_error"] = "지도 탭 확인 실패"
+            tries.append(rec)
+            break
         me2 = bot.r.loc(bot.r.player)
         S2 = stations()
         got = min(S2, key=lambda n: math.dist(S2[n][:2], me2[:2]))
