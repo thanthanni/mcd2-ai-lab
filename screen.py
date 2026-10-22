@@ -121,7 +121,9 @@ class Clicker:
         fx, fy = (sx - ox) / w, (sy - oy) / h
         if not (0.06 < fx < 0.94 and 0.10 < fy < 0.78):
             return False
-        return not (fx > 0.78 and fy < 0.32)          # 오른쪽 위 미니맵·퀘스트 표시 피하기
+        if fx > 0.78 and fy < 0.32:                   # 오른쪽 위 미니맵·퀘스트 표시 피하기
+            return False
+        return not (fx > 0.80 and fy < 0.64)          # 그 아래 에리스 화면 위 창(덱 오버레이)도 피하기(10-22 사진)
 
     def click_world(self, pt, me, every=0.6):
         now = time.time()
