@@ -356,12 +356,33 @@ class Agent(Bot):
             for _ in range(2):
                 self.pad.tap("B")
                 time.sleep(0.5)
-        else:                                          # 필드에서 Z를 누르면 부활 제단으로 되돌아가 버림 → 탐험으로 빠져나감
+        elif self.tries == 1:                          # 필드에서 Z를 누르면 부활 제단으로 되돌아가 버림 → 탐험으로 빠져나감
             log("[갇힘] 또 제자리 → 길찾기 두뇌로 안 가 본 쪽 탐험")
             self.snap("stuck2")
             self.last_hostile = 0
             self.wander_until = 0
             self.cur_path = None
+        else:
+            # 클릭해도 안 움직임 = 길찾기 밖 틈새에 끼임(10-22 13:38 판: 폭포 옆 기둥 틈에 10분 끼임, 클릭 표시는 뜨는데 제자리).
+            # 8방향으로 스틱+점프, 스틱+구르기를 차례로 해 보고 150 넘게 움직이면 멈춤.
+            log("[갇힘] 클릭으로 안 움직임 → 8방향 점프·구르기로 빠져나가기")
+            self.snap("wedged")
+            x0, y0 = self.pos
+            for k in range(16):
+                a = (k % 8) * math.pi / 4 + (0.4 if k >= 8 else 0)
+                self.pad.stick(*self.to_stick(math.cos(a), math.sin(a)))
+                time.sleep(0.15)
+                self.pad.tap("A" if k % 2 == 0 else "LEFT_SHOULDER", hold=0.08)
+                time.sleep(0.6)
+                try:
+                    _, (x1, y1, _z) = self.row()
+                except Exception:
+                    continue
+                if math.hypot(x1 - x0, y1 - y0) > 150:
+                    log(f"[갇힘] 빠져나옴({k + 1}번째 시도)")
+                    break
+            self.pad.reset()
+            self.wander_until = 0
         self.tries += 1
         self.anchor_t = time.time()
 
