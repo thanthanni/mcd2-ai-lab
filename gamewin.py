@@ -79,11 +79,11 @@ def prepare(wait_unplug=60) -> None:
 
 
 def controller_prompt_matches(image, template):
-    """확인한 연결 해제 문구·오류 코드·A 버튼의 밝은 글자 모양을 비교한다."""
+    """확인한 연결 해제 문구·오류 코드의 밝은 글자 모양을 비교한다."""
     from PIL import ImageChops, ImageFilter
-    crop = image.resize((960, 540)).crop((350, 215, 610, 347)).convert("L")
+    crop = image.resize((960, 540)).crop((350, 215, 610, 290)).convert("L")
     actual = crop.point(lambda v: 255 if v > 160 else 0)
-    expected = template.convert("L").point(lambda v: 255 if v > 160 else 0)
+    expected = template.crop((0, 0, 260, 75)).convert("L").point(lambda v: 255 if v > 160 else 0)
     na, ne = actual.histogram()[255], expected.histogram()[255]
     if not na or not ne:
         return False
@@ -131,12 +131,20 @@ def dismiss_controller_prompt(pad):
                 if controller_prompt_matches(image, template):
                     # 새 패드의 A를 받지 않는 경우에도 같은 확인 버튼만 마우스로 누른다.
                     screen.click(x + w / 2, y + h * (328 / 540))
-                    time.sleep(0.6)
+                    time.sleep(1.2)
                     if u32.GetForegroundWindow() != hwnd:
                         raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
                     image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
                     if controller_prompt_matches(image, template):
-                        raise RuntimeError("컨트롤러 연결 해제 창을 닫지 못했어")
+                        u32.keybd_event(0x0D, u32.MapVirtualKeyW(0x0D, 0), 0, 0)
+                        time.sleep(0.08)
+                        u32.keybd_event(0x0D, u32.MapVirtualKeyW(0x0D, 0), 2, 0)
+                        time.sleep(1.2)
+                        if u32.GetForegroundWindow() != hwnd:
+                            raise RuntimeError("연결 해제 창 확인 중 게임 포커스가 바뀌었어")
+                        image = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                        if controller_prompt_matches(image, template):
+                            raise RuntimeError("컨트롤러 연결 해제 창을 닫지 못했어")
                 print("컨트롤러 연결 해제 창 확인 후 닫았어.", flush=True)
                 return
             time.sleep(0.25)
