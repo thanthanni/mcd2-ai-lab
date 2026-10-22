@@ -248,6 +248,8 @@ class Agent(Bot):
         (10-22 12:59 판: 탐험이 마을 쪽 몹 구역을 골라 마을 가장자리에서 들락날락 16번)."""
         if self.near_danger(px, py):
             return True
+        if in_town_box(px, py):
+            return True
         cx, cy = int(px // 1000), int(py // 1000)
         return any((cx + i, cy + j) in self.town_cells for i in (-1, 0, 1) for j in (-1, 0, 1))
 
@@ -444,7 +446,7 @@ class Agent(Bot):
                         json.dump(self.field_pos, f)
                 except OSError:
                     pass
-        self.in_town = any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
+        self.in_town = in_town_box(x, y) or any("Town" in f[6] or "TargetDummy" in f[6] for f in row["foes"])
         if self.in_town:
             self.town_cells.add((int(x // 1000), int(y // 1000)))
         if d["dealt"] > 0 or d["taken"] > 0:
@@ -546,6 +548,12 @@ class Agent(Bot):
                 if self.near_danger(x + math.cos(a) * 300, y + math.sin(a) * 300, 350):
                     m[mv * len(BUTTONS):(mv + 1) * len(BUTTONS)] = False
         return m
+
+
+def in_town_box(px, py):
+    """브레이브 헤이븐(마을) 고정 범위. 10-22 기록: 마을 판정 자리 x 7k~22k, y -15k~-3k, 수레역 (14819,-5500).
+    필드(몹)는 모두 북쪽(+y). 마을 주민이 근처에만 와도 마을로 보던 판정이 경계에서 들락날락을 만들어서 고정 범위를 더함."""
+    return 6000 < px < 23000 and -16000 < py < -2500
 
 
 HANG = os.path.join(HERE, time.strftime("hang_%m%d_%H%M.txt"))
