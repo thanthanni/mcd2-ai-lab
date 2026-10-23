@@ -232,14 +232,35 @@ class NavMesh:
     def path(self, start, goal):
         """언리얼 점 → 언리얼 점. 꺾이는 점 목록(시작 제외, 목표 포함) 또는 None."""
         s, t = self.find(start), self.find(goal)
+        self.why = "start" if s is None else "goal" if t is None else ""   # 실패 이유(시작/목표가 지도 밖, 아니면 끊김)
         if s is None or t is None:
             return None
         if s == t:
             return [tuple(goal)]
+        g, prev = self._search(s, self.center[t], t)
+        if t not in g:
+            self.why = "split"
+            return None
+        return self._build(s, t, prev, start, goal)
+
+    def path_toward(self, start, goal, min_gain=500):
+        """목표까지 이어진 길이 없을 때(목표 쪽 지도가 아직 안 불러와졌거나 끊김): 내가 닿을 수 있는 다각형 중
+        목표에 가장 가까운 곳까지의 경로. 지금보다 min_gain 이상 가까워지지 않으면 None. (경로, 그 끝점)"""
+        s = self.find(start)
+        if s is None:
+            return None, None
+        g, prev = self._search(s, None, None)
+        best = min(g, key=lambda k: math.hypot(self.center[k][0] - goal[0], self.center[k][1] - goal[1]))
+        end = self.center[best]
+        if math.hypot(end[0] - goal[0], end[1] - goal[1]) > math.hypot(start[0] - goal[0], start[1] - goal[1]) - min_gain:
+            return None, None
+        return self._build(s, best, prev, start, end), end
+
+    def _search(self, s, tc, t):
+        """A*(tc가 있으면) 또는 닿는 곳 전부 Dijkstra. (거리, 직전 정보)"""
         g = {s: 0.0}
         prev = {}
         pq = [(0.0, s)]
-        tc = self.center[t]
         done = set()
         while pq:
             _, u = heapq.heappop(pq)
@@ -259,9 +280,10 @@ class NavMesh:
                 if nd < g.get(v, 1e18):
                     g[v], prev[v] = nd, (u, a, b)
                     c = self.center[v]
-                    heapq.heappush(pq, (nd + math.hypot(c[0] - tc[0], c[1] - tc[1]), v))
-        if t not in g:
-            return None
+                    heapq.heappush(pq, (nd + (math.hypot(c[0] - tc[0], c[1] - tc[1]) if tc else 0.0), v))
+        return g, prev
+
+    def _build(self, s, t, prev, start, goal):
         portals = []
         k = t
         while k != s:

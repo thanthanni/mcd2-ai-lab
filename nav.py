@@ -57,13 +57,14 @@ class Nav:
         self.learned = {"cells": {}, "edges": [], "blocked": {}}
         self._load()
         self.goal = None
+        self.partial_end = None
         self.path, self.i = [], 0
         self.best, self.best_t = 1e18, 0.0
         self.level, self.replans = 0, 0
         self.action_until, self.action = 0.0, None
         self.prev = None          # (시각, 위치) — 걸어서 이어진 칸 배우기
         self.last_save = time.time()
-        self.stats = {"mesh_paths": 0, "wm_paths": 0, "replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0}
+        self.stats = {"mesh_paths": 0, "wm_paths": 0, "replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0, "partial": 0}
         try:
             self.jumps = json.load(open(JUMPS))
         except (OSError, ValueError):
@@ -156,6 +157,18 @@ class Nav:
                 if p:
                     self.stats["mesh_paths"] += 1
                     return p + list(wm[j + 1:])
+            if not wm:
+                # 목표 쪽 게임 지도가 아직 안 불러와졌거나 끊김(10-23 숲: 6000 떨어진 역까지 0/18) → 닿는 곳 중
+                # 목표에 가장 가까운 데까지 가서 지도를 다시 읽고 이어 감. 같은 데서 더 못 가까워지면 실패.
+                last = self.partial_end
+                p, end = m.path_toward(me, self.goal, min_gain=0 if last and math.dist(me[:2], last[:2]) >= 300 else 500)
+                if p and not (last and math.dist(end[:2], last[:2]) < 300 and math.dist(me[:2], last[:2]) < 300):   # 20초 지도 갱신 중엔 같은 끝점 계속
+                    self.partial_end = end
+                    self.stats["partial"] += 1
+                    self.log(f"[걷기] 목표까지 길 없음({m.why or '?'}) → 닿는 곳 중 가장 가까운 점까지 "
+                             f"(남은 직선 {math.dist(end[:2], self.goal[:2]):.0f})")
+                    return p
+                self.log(f"[걷기] 게임 지도로도 못 감: {m.why or '?'}, 다각형 {len(m)}개")
         except Exception as e:
             self.log("[걷기] 게임 지도 경로 오류:", e)
         self.stats["wm_paths"] += 1
@@ -228,6 +241,7 @@ class Nav:
             return
         self.goal, self.tol = goal, tol
         self.path, self.i, self.replans, self.level = [], 0, 0, 0
+        self.partial_end = None
         self.best, self.best_t = 1e18, time.time()
 
     def remaining(self, me):
@@ -276,6 +290,11 @@ class Nav:
             if not self.best_t:
                 self.best_t = now
             self.log(f"[걷기] 연결 경로 {len(self.path)}점, 남은 {self.best:.0f}")
+        # 중간 목표(닿는 곳 중 가장 가까운 점)에 왔으면 지도를 새로 읽고 다시 길 찾기
+        if self.partial_end and self.path and math.dist(me[:2], self.partial_end[:2]) < 150 \
+                and math.dist(self.path[-1][:2], self.partial_end[:2]) < 1:
+            self.path, self.mesh_t = [], 0.0
+            return "moving"
         # 지나간 점 넘기기(점에 닿았거나 다음 점이 더 가까워졌으면)
         while self.i < len(self.path) - 1:
             a, b = self.path[self.i], self.path[self.i + 1]
