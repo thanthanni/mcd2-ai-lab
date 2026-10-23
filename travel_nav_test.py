@@ -23,7 +23,8 @@ TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1200.0
 PROBE = "probe" in sys.argv[2:]
 LIST = "list" in sys.argv[2:]
-QUEST = "quest" in sys.argv[2:]   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
+QUEST = "quest" in sys.argv[2:]
+FOLLOW = "follow" in sys.argv[2:]   # 추적 중인 퀘스트 안내선(휠 클릭)을 따라 걷기(10-23 스프린트3)   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
 OASIS = (-11181, 70100, 600)       # PlainsA2-VillagerOasis(웅덩이 연못으로 추정) 역 위치
      # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
@@ -349,8 +350,73 @@ def main():
             shot(f"talk_{k:02d}")
         log("  퀘스트 상태(후):", quest_state())
 
+    def task_states():
+        out = {}
+        for cls in ("ExploreTask", "InteractTask"):
+            for t in ue.find_instances(cls):
+                try:
+                    pr = ue.oprops(t)
+                    tid = ue.fstring(t + pr["ID"].offset) if pr["ID"].kind == "StrProperty" else ue.fname(t + pr["ID"].offset)
+                    if tid in ("CA05_E20", "CA05_I18", "CA05_E01", "CA05_I01"):
+                        sp_ = pr["State"]
+                        out[tid] = ue.read(t + sp_.offset + ue.props(sp_.struct)["State"].offset, 1).hex()
+                except Exception:
+                    continue
+        return out
+
+    def follow():
+        """휠 클릭 → 게임 안내 경로(GCN_ShowGuidance) 읽기 → 경로 따라 2500 앞 점까지 걷기 → 반복."""
+        log("  퀘스트:", quest_state(), task_states())
+        misses = 0
+        k = 0
+        while time.time() < run_deadline - 20:
+            k += 1
+            me = bot.r.loc(bot.r.player)
+            if screen.u32.GetForegroundWindow() == bot.clicker.hwnd:
+                screen.u32.mouse_event(0x0020, 0, 0, 0, 0)
+                time.sleep(0.08)
+                screen.u32.mouse_event(0x0040, 0, 0, 0, 0)
+            time.sleep(1.5)
+            bot.r.scan()
+            pts, kind = bot.r.guide_path(me[:2], press_xy=me[:2])
+            if not pts:
+                pts, kind = bot.r.guide_path(me[:2])
+            if not pts:
+                misses += 1
+                log(f"  [{k}] 안내선 없음({misses}번째) 위치 {tuple(round(v) for v in me)}")
+                shot("noguide")
+                if misses >= 4:
+                    break
+                time.sleep(3)
+                continue
+            misses = 0
+            acc, tgt = 0.0, pts[-1]
+            for a, b in zip(pts, pts[1:]):
+                acc += math.dist(a[:2], b[:2])
+                if acc >= 2500:
+                    tgt = b
+                    break
+            total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
+            log(f"  [{k}] 안내선 {kind} {len(pts)}점 길이 {total:.0f}, 끝 {tuple(round(v) for v in pts[-1])} → 목표 {tuple(round(v) for v in tgt)}")
+            res, sec = walk(tgt, 30 + min(acc, total) / 200)
+            me2 = bot.r.loc(bot.r.player)
+            log(f"      걷기 {res} {sec:.0f}초, 위치 {tuple(round(v) for v in me2)} | {quest_state()} {task_states()}")
+            if k % 3 == 0 or res != "arrived":
+                shot(f"follow_{k:02d}_{res}")
+            if res == "died":
+                time.sleep(8)
+                pad.tap("A")
+                time.sleep(10)
+
     t0, tries = time.time(), []
     run_deadline = t0 + SECONDS
+    if FOLLOW:
+        follow()
+        nav.save()
+        pad.reset()
+        bot.stop = True
+        log(f"\n[결과] 안내선 따라가기 끝, 걷기 통계 {nav.stats}")
+        return
     log(f"빠른 이동 + 걷기 시험 {SECONDS:.0f}초")
     while time.time() - t0 < SECONDS - 60:
         S = stations()
