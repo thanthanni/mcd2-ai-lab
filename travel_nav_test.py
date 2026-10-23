@@ -178,16 +178,18 @@ def main():
     def travel(st_pos, downs):
         pad.stick(0, 0)
         time.sleep(0.5)
-        bot.clicker.rclick_world(st_pos)
-        time.sleep(0.4)
-        # 우클릭 직후 첫 A는 게임이 입력 표시를 패드로 바꾸는 데만 쓰일 수 있음(10-23 숲 역: '여행 A' 떠 있는데 메뉴 안 열림)
-        # → 메뉴가 안 열렸을 때만 A 다시(열린 메뉴에서 A는 항목 선택이라 누르지 않음)
+        # 역 메뉴는 역을 좌클릭해야 열림(10-23 51_station_check: A 짧게·길게, 우클릭, 우클릭+A 모두 안 열림)
+        # → 메뉴가 안 열렸을 때만 다시 클릭(열린 메뉴 위 클릭은 항목 선택이 될 수 있음)
+        c = bot.clicker
         for n in range(3):
-            pad.tap("A")
+            c.rect = screen.client_rect(c.hwnd)
+            sp = screen.project(c.cam.read(), st_pos, c.rect)
+            if sp and c._safe(*sp) and screen.u32.GetForegroundWindow() == c.hwnd:
+                screen.click(*sp, hold=0.08)
             time.sleep(2.5)
             if active_tab() is not None:
                 break
-            log(f"  메뉴 안 열림({n + 1}번째 A)")
+            log(f"  메뉴 안 열림({n + 1}번째 좌클릭, 역 화면 위치 {sp})")
         # 역 상호작용은 메뉴를 '마지막에 본 탭'으로 연다(19:5x 시험: 파티 탭으로 열려서 36번 다 실패) → 지도 탭으로 맞춤
         for _ in range(8):
             k = active_tab()
