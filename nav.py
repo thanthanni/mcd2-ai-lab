@@ -309,7 +309,10 @@ class Nav:
             a, b, _ = self.jump_try
             self.jump_try = None
             k = jkey(a, b)
-            if math.dist(me[:2], b[:2]) < 150 and abs(me[2] - b[2]) < 300:
+            ln = math.dist(a[:2], b[:2]) or 1
+            along = ((me[0] - a[0]) * (b[0] - a[0]) + (me[1] - a[1]) * (b[1] - a[1])) / ln   # a→b 방향으로 넘어간 거리
+            # 거리만 보면 짧은 단차(100)는 벽 앞에 서 있어도 성공으로 쳐짐(10-23 숲) → 방향으로 70% 넘게 넘어가야 성공
+            if along >= 0.7 * ln and math.dist(me[:2], b[:2]) < 150 + ln and abs(me[2] - b[2]) < 300:
                 self.jump_fail.pop(k, None)
             else:
                 self.jump_fail[k] = self.jump_fail.get(k, 0) + 1
