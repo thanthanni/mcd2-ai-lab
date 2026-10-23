@@ -14,6 +14,7 @@ import ctypes
 import ctypes.wintypes as wt
 import glob
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -21,9 +22,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST = os.path.join(HERE, "last_job.txt")
 RETRY = os.path.join(HERE, "retry_after.txt")
+UNSENT = os.path.join(HERE, "unsent")   # 못 보낸 결과(ntfy 하루 한도 등)를 모아 뒀다가 다시 보냄(10-23: 49번 결과를 한도 때문에 잃음)
 JOB_URL = "https://api.github.com/repos/thanthanni/mcd2-ai-lab/contents/job.txt"
 RECPID = os.path.join(HERE, "recorder.pid")
-SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt", "retry_after.txt"}
+SKIP = {"idle_state.txt", "current.txt", "README.txt", "videos.txt", "data_path.txt", "job.txt", "last_job.txt", "sent.txt", "recorder.pid", "status.txt", "status_sent.txt", "retry_after.txt", "unsent_try.txt"}
 IDLE_NEEDED = 180
 # 안티치트가 있는 게임·런처: 이게 켜져 있으면 봇·기록기를 끄고 아무것도 안 한다(꺼지면 다시 평소대로)
 # 런처(라이엇 클라이언트·롤 클라이언트처럼 늘 켜져 있을 수 있는 것)는 빼고, 실제 게임 화면 프로세스만 본다.
@@ -181,6 +183,27 @@ def pending_job():
     return None if jid == last else (jid, bat, reps)
 
 
+def resend_unsent():
+    """unsent/에 모아 둔 결과를 오래된 것부터 다시 보냄. 하나라도 실패하면(한도 그대로) 10분 뒤에 다시."""
+    if not os.path.isdir(UNSENT) or not os.listdir(UNSENT):
+        return
+    mark = os.path.join(UNSENT, "..", "unsent_try.txt")   # 1분마다 새 프로세스라 시도 시각은 파일로
+    try:
+        if time.time() - float(open(mark).read()) < 600:
+            return
+    except (OSError, ValueError):
+        pass
+    open(mark, "w").write(str(time.time()))
+    import uploader
+    for d in sorted(os.listdir(UNSENT)):
+        dp = os.path.join(UNSENT, d)
+        for name in sorted(os.listdir(dp)):
+            if not uploader.send_file(name, title=f"{d} 다시 보냄", path=os.path.join(dp, name)):
+                return
+            os.remove(os.path.join(dp, name))
+        os.rmdir(dp)
+
+
 def main():
     sys.path.insert(0, HERE)
     ac = anticheat_running()
@@ -190,6 +213,7 @@ def main():
         print(f"[자동 실행] {ac} 실행 중이라 쉬는 중(꺼지면 다시 시작)", flush=True)
         status(f"쉬는 중: {ac} 실행 중")
         return
+    resend_unsent()
     job = pending_job()
     try:
         until, why, rid = (open(RETRY, encoding="utf-8").read().split("\t") + [""])[:3]
@@ -278,7 +302,14 @@ def main():
                      glob.glob(os.path.join(glob.escape(HERE), "*.jsonl")) + glob.glob(os.path.join(glob.escape(HERE), "snaps_*.zip"))
                      if os.path.getmtime(p) > t0 and os.path.basename(p) not in SKIP
                      and not os.path.basename(p).startswith("play_")]
-            n = sum(uploader.send_file(name, title=f"{jid} {k + 1}/{reps}") for name in names)
+            n = 0
+            for name in names:
+                if uploader.send_file(name, title=f"{jid} {k + 1}/{reps}"):
+                    n += 1
+                else:                                         # 못 보냈으면 복사해 두고 나중에 다시
+                    keep = os.path.join(UNSENT, f"{jid.replace('@', '_')}-{k + 1}of{reps}")
+                    os.makedirs(keep, exist_ok=True)
+                    shutil.copyfile(os.path.join(HERE, name), os.path.join(keep, name))
             print(f"[자동 실행] 결과 {n}개 보냄", flush=True)
             if not stopped and time.time() - t0 < 120 and not any(w in bat for w in ("probe", "check", "cycle", "reset")):   # 2분도 못 가고 끝났으면 오류(탐색·진단 도구는 원래 짧음, 10-23 진단이 20분마다 되풀이됨): 작업을 '안 한 것'으로 되돌려 20분 뒤 다시
                 try:

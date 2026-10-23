@@ -83,10 +83,11 @@ def send_pending(patterns=("play_*.jsonl",), quiet=False):
     return n
 
 
-def send_file(name, title="result"):
-    """파일 하나를 바로 보냄(보낸 기록 없이). 성공하면 1. 압축해도 1.9MB가 넘으면 조각(이름.partKofN)으로 나눠 보냄."""
+def send_file(name, title="result", path=None):
+    """파일 하나를 바로 보냄(보낸 기록 없이). 성공하면 1. 압축해도 1.9MB가 넘으면 조각(이름.partKofN)으로 나눠 보냄.
+    path를 주면 그 파일을 name 이름으로 보냄(못 보낸 결과 다시 보내기용)."""
     t = topic()
-    p = os.path.join(HERE, name)
+    p = path or os.path.join(HERE, name)
     if not t or not os.path.exists(p) or os.path.getsize(p) == 0 or os.path.getsize(p) > 60_000_000:
         return 0
     data, fname = _body(p, name)
