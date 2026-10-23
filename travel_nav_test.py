@@ -21,7 +21,8 @@ sys.path.insert(0, HERE)
 OUT = os.path.join(HERE, "travel_nav_result.txt")
 TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1200.0
-PROBE = "probe" in sys.argv[2:]   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
+PROBE = "probe" in sys.argv[2:]
+LIST = "list" in sys.argv[2:]     # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
 lines: list[str] = []
 
@@ -209,6 +210,16 @@ def main():
         shot("map")
         pad.tap("X")
         time.sleep(1.2)
+        if LIST:                                # 역 목록 칸 순서 확인: 한 칸씩 내리며 사진, 고르지 않고 닫음
+            shot("list_00")
+            for k in range(1, 22):
+                pad.tap("DPAD_DOWN")
+                time.sleep(0.5)
+                shot(f"list_{k:02d}")
+            for _ in range(4):
+                pad.tap("B")
+                time.sleep(0.5)
+            return True
         for _ in range(abs(downs)):
             pad.tap("DPAD_DOWN" if downs > 0 else "DPAD_UP")
             time.sleep(0.4)
@@ -282,6 +293,9 @@ def main():
             rec["travel_error"] = "지도 탭 확인 실패"
             tries.append(rec)
             break
+        if LIST:
+            log("  역 목록 사진 찍음")
+            break
         me2 = bot.r.loc(bot.r.player)
         S2 = stations()
         got = min(S2, key=lambda n: math.dist(S2[n][:2], me2[:2]))
@@ -319,7 +333,7 @@ if __name__ == "__main__":
         shots = glob.glob(os.path.join(HERE, "tnav_*.jpg"))
         if shots:
             with zipfile.ZipFile(os.path.join(HERE, time.strftime("snaps_tnav_%m%d_%H%M.zip")), "w") as z:
-                for f in sorted(shots, key=os.path.getmtime)[-12:]:
+                for f in sorted(shots, key=os.path.getmtime)[-30:]:
                     z.write(f, os.path.basename(f))
             for f in shots:
                 os.remove(f)
