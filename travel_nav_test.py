@@ -224,10 +224,29 @@ def main():
                 pad.tap("B")
                 time.sleep(0.5)
             return True
-        for _ in range(abs(downs)):
-            pad.tap("DPAD_DOWN" if downs > 0 else "DPAD_UP")
-            time.sleep(0.4)
+        # 0.4초 간격 십자키는 절반쯤 씹힘(10-23: 6번 눌러 3칸) → 누를 때마다 목록 화면이 바뀌었는지 보고 셈
+        def pane():
+            from PIL import ImageGrab
+            x, y, w, h = screen.client_rect(bot.clicker.hwnd)
+            return ImageGrab.grab(bbox=(x + int(w * 0.57), y + int(h * 0.18), x + int(w * 0.96), y + int(h * 0.9))).convert("L").resize((96, 120))
+        moved = presses = 0
+        while moved < abs(downs) and presses < abs(downs) * 3:
+            a = pane()
+            pad.tap("DPAD_DOWN" if downs > 0 else "DPAD_UP", hold=0.12)
+            time.sleep(0.7)
+            b = pane()
+            presses += 1
+            diff = sum(abs(p - q) for p, q in zip(a.getdata(), b.getdata())) / (96 * 120)
+            if diff > 2.0:
+                moved += 1
+        log(f"  목록 {moved}/{abs(downs)}칸 이동(누름 {presses}번)")
         shot("pick")
+        if moved != abs(downs):
+            log("  목록 칸 이동 실패: 선택하지 않고 닫음")
+            for _ in range(4):
+                pad.tap("B")
+                time.sleep(0.5)
+            return False
         pad.tap("A")
         time.sleep(1.2)
         pad.tap("A")
