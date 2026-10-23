@@ -25,9 +25,10 @@ PROBE = "probe" in sys.argv[2:]
 LIST = "list" in sys.argv[2:]
 QUEST = "quest" in sys.argv[2:]   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
 OASIS = (-11181, 70100, 600)       # PlainsA2-VillagerOasis(웅덩이 연못으로 추정) 역 위치
-if QUEST:
-    ROUTE = {"Brave Haven": ("PlainsA2-VillagerOasis", 6)}     # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
+     # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
+if QUEST:   # 목록 순서(10-23 53_station_list): 0 안식처 1 벌집 농장 2 허니브룩 다리 3 리틀 하울(=ForestA1-Outpost) 4 깊은 어둠 5 벌목꾼 6 웅덩이 연못
+    ROUTE = {"Brave Haven": ("PlainsA2-VillagerOasis", 6), "ForestA1-Outpost": ("PlainsA2-VillagerOasis", 3)}
 lines: list[str] = []
 
 
