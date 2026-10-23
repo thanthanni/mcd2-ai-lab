@@ -22,7 +22,11 @@ OUT = os.path.join(HERE, "travel_nav_result.txt")
 TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1200.0
 PROBE = "probe" in sys.argv[2:]
-LIST = "list" in sys.argv[2:]     # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
+LIST = "list" in sys.argv[2:]
+QUEST = "quest" in sys.argv[2:]   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
+OASIS = (-11181, 70100, 600)       # PlainsA2-VillagerOasis(웅덩이 연못으로 추정) 역 위치
+if QUEST:
+    ROUTE = {"Brave Haven": ("PlainsA2-VillagerOasis", 6)}     # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
 lines: list[str] = []
 
@@ -262,6 +266,69 @@ def main():
                     time.sleep(0.6)
             time.sleep(1.0)
 
+    def quest_state():
+        out = {}
+        for q in ue.find_instances("LiveQuest"):
+            try:
+                pr = ue.oprops(q)
+                qid = ue.fstring(q + pr["ID"].offset) if pr["ID"].kind == "StrProperty" else ue.fname(q + pr["ID"].offset)
+                if qid in ("CA05", "CA07", "CA04"):
+                    sp_ = pr["State"]
+                    inner = ue.props(sp_.struct)["State"].offset
+                    out[qid] = ue.read(q + sp_.offset + inner, 1).hex()
+            except Exception:
+                continue
+        try:
+            runner = next(o for o in ue.find_instances("BP_QuestRunner_C") if not ue.objname(o).startswith("Default__"))
+            pr = ue.oprops(runner)
+            fq = ue.q(runner + pr["FocusedQuest"].offset)
+            out["추적"] = ue.objname(fq) if fq else "없음"
+        except Exception as e:
+            out["추적"] = f"읽기 실패 {str(e)[:40]}"
+        return out
+
+    def quest_meet():
+        """도착한 곳 근처 퀘스트 NPC를 적고, CA05 주민(없으면 가장 가까운 퀘스트 NPC)에게 걸어가 좌클릭 → A로 대화 넘김."""
+        log("  퀘스트 상태(전):", quest_state())
+        time.sleep(3)
+        bot.r.scan()
+        me = bot.r.loc(bot.r.player)
+        cands = []
+        for o, n in bot.r.quest_objs.items():
+            try:
+                p = bot.r.loc(o)
+                cands.append((math.dist(p[:2], me[:2]), ue.objname(o), n, p, o))
+            except Exception:
+                continue
+        cands.sort(key=lambda c: c[0])
+        log(f"  근처 퀘스트 대상 {len(cands)}개(가까운 순):")
+        for d, on, n, p, _ in cands[:20]:
+            log(f"    {d:6.0f} {n} {on[:70]} {tuple(round(v) for v in p)}")
+        pick = next((c for c in cands if "CA05" in c[1] and "Giver" in c[1]), None) or next((c for c in cands if "CA05" in c[1]), None)
+        if not pick:
+            log("  CA05 대상 없음 → 말 걸기 안 함")
+            shot("no_ca05")
+            return
+        d, on, n, p, o = pick
+        log(f"  고른 대상: {on} 거리 {d:.0f}")
+        res, sec = walk(p, 60 + d / 250)
+        log(f"  대상까지 걷기 {res} {sec:.0f}초")
+        shot("near_npc")
+        c = bot.clicker
+        c.rect = screen.client_rect(c.hwnd)
+        p2 = bot.r.loc(o)
+        sp_ = screen.project(c.cam.read(), (p2[0], p2[1], p2[2] + 60), c.rect)
+        if sp_ and c._safe(*sp_) and screen.u32.GetForegroundWindow() == c.hwnd:
+            screen.click(*sp_, hold=0.08)
+        log(f"  NPC 좌클릭 {sp_}")
+        time.sleep(2.5)
+        shot("talk_00")
+        for k in range(1, 9):
+            pad.tap("A")
+            time.sleep(1.6)
+            shot(f"talk_{k:02d}")
+        log("  퀘스트 상태(후):", quest_state())
+
     t0, tries = time.time(), []
     run_deadline = t0 + SECONDS
     log(f"빠른 이동 + 걷기 시험 {SECONDS:.0f}초")
@@ -295,6 +362,12 @@ def main():
             break
         if LIST:
             log("  역 목록 사진 찍음")
+            break
+        if QUEST:
+            me2 = bot.r.loc(bot.r.player)
+            log(f"  빠른 이동 뒤 위치 {tuple(round(v) for v in me2)}, 웅덩이 연못 역까지 {math.dist(me2[:2], OASIS[:2]):.0f}")
+            shot("arrived")
+            quest_meet()
             break
         me2 = bot.r.loc(bot.r.player)
         S2 = stations()
