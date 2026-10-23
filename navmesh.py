@@ -25,6 +25,11 @@ HDR = 0x58
 TILE = 3200.0
 
 
+def jkey(a, b):
+    """단차 점 쌍의 이름(지도를 다시 읽어도 같은 값)."""
+    return tuple(round(v) for v in a[:3]) + tuple(round(v) for v in b[:3])
+
+
 def ptr_ok(p):
     return 0x10000 < p < 0x7FFFFFFFFFFF
 
@@ -83,6 +88,7 @@ class NavMesh:
         self.grid = {}       # (gx, gy) 1000칸 → 다각형 번호들
         self.tile_ground, self.tile_off, self.tile_first = [], [], []
         self.jump_edges, self.jump_pairs = {}, {}
+        self.banned = set()   # 실제로 못 건넌 단차(a, b) 점 쌍: 길 찾기에서 뺌(nav가 채움, 몹 전용 연결 등)
         edges, border = {}, {}
         for d in blobs:
             ground, off, first = {}, {}, {}
@@ -271,6 +277,8 @@ class NavMesh:
             done.add(u)
             cu = self.center[u]
             for v, a, b in self.adj[u]:
+                if (u, v) in self.jump_edges and jkey(a, b) in self.banned:
+                    continue
                 m = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
                 if (u, v) in self.jump_edges:
                     w = math.dist(cu, a) + math.dist(a, b) + math.dist(b, self.center[v]) + 100

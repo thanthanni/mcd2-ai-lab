@@ -31,6 +31,11 @@ STUCK_T = 5.0       # 이 시간 동안
 STUCK_D = 150       # 남은 거리가 이만큼 안 줄면 막힘
 
 
+def jkey(a, b):
+    """단차 점 쌍의 이름(navmesh.jkey와 같은 규칙: 지도를 다시 읽어도 같은 값)."""
+    return tuple(round(v) for v in a[:3]) + tuple(round(v) for v in b[:3])
+
+
 def ckey(p):
     return f"{int(p[0] // CELL)},{int(p[1] // CELL)},{int(p[2] // LAYER)}"
 
@@ -58,13 +63,14 @@ class Nav:
         self._load()
         self.goal = None
         self.partial_end = None
+        self.jump_try, self.jump_fail, self.bad_jumps = None, {}, {}   # 단차 점프 시도·실패 횟수·막은 단차(이름→풀리는 시각)
         self.path, self.i = [], 0
         self.best, self.best_t = 1e18, 0.0
         self.level, self.replans = 0, 0
         self.action_until, self.action = 0.0, None
         self.prev = None          # (시각, 위치) — 걸어서 이어진 칸 배우기
         self.last_save = time.time()
-        self.stats = {"mesh_paths": 0, "wm_paths": 0, "replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0, "partial": 0}
+        self.stats = {"mesh_paths": 0, "wm_paths": 0, "replans": 0, "jumps": 0, "detours": 0, "wedge": 0, "blocked": 0, "learned_cells": 0, "partial": 0, "bad_jumps": 0}
         try:
             self.jumps = json.load(open(JUMPS))
         except (OSError, ValueError):
@@ -142,6 +148,9 @@ class Nav:
         나머지는 걸어 본 길  3) 게임 지도를 못 읽으면 걸어 본 길만."""
         wm = self._plan_wm(me)
         m = self.mesh
+        if m is not None:
+            now = time.time()
+            m.banned = {k for k, until in self.bad_jumps.items() if until > now}
         if m is None:
             self.stats["wm_paths"] += 1
             return wm
@@ -168,6 +177,10 @@ class Nav:
                     self.log(f"[걷기] 목표까지 길 없음({m.why or '?'}) → 닿는 곳 중 가장 가까운 점까지 "
                              f"(남은 직선 {math.dist(end[:2], self.goal[:2]):.0f})")
                     return p
+                if m.why == "goal" and math.dist(me[:2], self.goal[:2]) <= 900:
+                    # 목표(역 등)가 보행 지도 바깥 받침대 위: 지도 끝에 왔으면 마지막 900 안은 바로 찍어 봄(못 가면 막힘 처리가 끊음)
+                    self.log("[걷기] 목표가 지도 밖, 가까워서 직접 이동")
+                    return [tuple(self.goal)]
                 self.log(f"[걷기] 게임 지도로도 못 감: {m.why or '?'}, 다각형 {len(m)}개")
         except Exception as e:
             self.log("[걷기] 게임 지도 경로 오류:", e)
@@ -290,6 +303,22 @@ class Nav:
             if not self.best_t:
                 self.best_t = now
             self.log(f"[걷기] 연결 경로 {len(self.path)}점, 남은 {self.best:.0f}")
+        # 단차 점프 2.5초 뒤 건너편(b)에 못 닿았으면 실패로 셈, 2번 실패한 단차는 30분 막고 다시 길 찾기
+        # (10-23 숲: 마당 벽을 넘는 연결에서 같은 점프만 3분 반복 — 몹 전용 연결로 추정)
+        if self.jump_try and now - self.jump_try[2] > 2.5:
+            a, b, _ = self.jump_try
+            self.jump_try = None
+            k = jkey(a, b)
+            if math.dist(me[:2], b[:2]) < 150 and abs(me[2] - b[2]) < 300:
+                self.jump_fail.pop(k, None)
+            else:
+                self.jump_fail[k] = self.jump_fail.get(k, 0) + 1
+                if self.jump_fail[k] >= 2:
+                    self.bad_jumps[k] = now + 1800
+                    self.stats["bad_jumps"] += 1
+                    self.path = []
+                    self.log("[걷기] 단차를 못 건넘 2번 → 이 단차 막고 다시 길 찾기", tuple(round(v) for v in a))
+                    return "moving"
         # 중간 목표(닿는 곳 중 가장 가까운 점)에 왔으면 지도를 새로 읽고 다시 길 찾기
         if self.partial_end and self.path and math.dist(me[:2], self.partial_end[:2]) < 150 \
                 and math.dist(self.path[-1][:2], self.partial_end[:2]) < 1:
@@ -304,6 +333,7 @@ class Nav:
                     self.pad.tap("A")
                     self.action, self.action_until = (b[0]-me[0], b[1]-me[1]), now + 0.8
                     self.stats["jumps"] += 1
+                    self.jump_try = (a, b, now)
                     self.i += 1
                     self.log("[걷기] 지도 단차 점프", tuple(round(v) for v in a), "→", tuple(round(v) for v in b))
                     return "moving"
