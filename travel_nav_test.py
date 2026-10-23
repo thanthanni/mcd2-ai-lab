@@ -21,6 +21,7 @@ sys.path.insert(0, HERE)
 OUT = os.path.join(HERE, "travel_nav_result.txt")
 TRACE = os.path.join(HERE, time.strftime("trace_%m%d_%H%M.jsonl"))
 SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1200.0
+PROBE = "probe" in sys.argv[2:]   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
 lines: list[str] = []
 
@@ -219,6 +220,35 @@ def main():
         nav.prev = None
         return True
 
+    def probe_interact(st_pos):
+        """역 앞에서 어떤 입력이 메뉴를 여는지 하나씩 시험(10-23: 우클릭+A로 안 열림). 열리면 B로 닫고 다음."""
+        pad.stick(0, 0)
+        time.sleep(1.0)
+        c = bot.clicker
+        c.rect = screen.client_rect(c.hwnd)
+        sp = screen.project(c.cam.read(), st_pos, c.rect)
+        log(f"  역 화면 위치 {sp}, 클릭 허용 {bool(sp and c._safe(*sp))}, 게임 창 앞 {screen.u32.GetForegroundWindow() == c.hwnd}")
+
+        def lclick():
+            if sp and c._safe(*sp):
+                screen.click(*sp, hold=0.08)
+                return True
+            return False
+        tests = [("A 짧게", lambda: pad.tap("A")), ("A 0.6초", lambda: pad.tap("A", hold=0.6)),
+                 ("우클릭", lambda: c.rclick_world(st_pos)), ("좌클릭", lclick),
+                 ("우클릭 뒤 1초 A", lambda: (c.rclick_world(st_pos), time.sleep(1.0), pad.tap("A")))]
+        for name, fn in tests:
+            r = fn()
+            time.sleep(2.5)
+            k = active_tab()
+            shot("probe_" + name.replace(" ", ""))
+            log(f"  [{name}] 반환 {r} → 메뉴 {TABS[k] if k is not None else '안 열림'}")
+            if k is not None:
+                for _ in range(2):
+                    pad.tap("B")
+                    time.sleep(0.6)
+            time.sleep(1.0)
+
     t0, tries = time.time(), []
     run_deadline = t0 + SECONDS
     log(f"빠른 이동 + 걷기 시험 {SECONDS:.0f}초")
@@ -243,6 +273,9 @@ def main():
                 pad.tap("A")
                 time.sleep(10)
             continue
+        if PROBE:
+            probe_interact(sp)
+            break
         if not travel(sp, downs):
             rec["travel_error"] = "지도 탭 확인 실패"
             tries.append(rec)
