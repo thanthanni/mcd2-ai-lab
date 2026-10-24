@@ -456,6 +456,34 @@ def main():
                     continue
         return out
 
+    def walk_guide(pts, j0, dist_limit):
+        """안내선 점을 차례로 클릭(점당 최대 8초, 150 안이면 다음 점). 2초 동안 100도 못 움직이면 점프 한 번."""
+        t0 = time.time()
+        acc = 0.0
+        prev = pts[j0]
+        for q in pts[j0 + 1:]:
+            acc += math.dist(prev[:2], q[:2])
+            prev = q
+            ts, last_p, last_t = time.time(), bot.r.loc(bot.r.player), time.time()
+            while time.time() - ts < 8 and time.time() < run_deadline:
+                modal_guard()
+                me = bot.r.loc(bot.r.player)
+                if math.dist(me[:2], q[:2]) < 150:
+                    break
+                tgt = q if math.dist(me[:2], q[:2]) < 900 else tuple(me[i] + (q[i] - me[i]) * 900 / math.dist(me[:2], q[:2]) for i in range(3))
+                if not bot.clicker.click_world(tgt, me):
+                    pad.stick(*bot.to_stick(q[0] - me[0], q[1] - me[1]))
+                if time.time() - last_t > 2:
+                    if math.dist(me[:2], last_p[:2]) < 100:
+                        pad.tap("A")
+                    last_p, last_t = me, time.time()
+                time.sleep(0.1)
+            pad.stick(0, 0)
+            if acc >= dist_limit:
+                break
+        me = bot.r.loc(bot.r.player)
+        return ("arrived" if math.dist(me[:2], prev[:2]) < 300 else "partial"), time.time() - t0
+
     def follow():
         """휠 클릭 → 게임 안내 경로(GCN_ShowGuidance) 읽기 → 경로 따라 2500 앞 점까지 걷기 → 반복."""
         log("  퀘스트:", quest_state(), task_states())
@@ -493,6 +521,10 @@ def main():
             total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
             log(f"  [{k}] 안내선 {kind} {len(pts)}점 길이 {total:.0f}, 끝 {tuple(round(v) for v in pts[-1])} → 목표 {tuple(round(v) for v in tgt)}")
             res, sec = walk(tgt, 30 + min(acc, total) / 200)
+            if res == "failed":
+                # 내 길찾기 지도가 끊긴 곳(10-24: 열린 문간에서 출발점이 지도 밖) → 게임이 계산한 안내선 점을 직접 클릭해 따라감
+                res, sec = walk_guide(pts, j0, 2500)
+                log(f"      (안내선 직접 따라가기 {res})")
             me2 = bot.r.loc(bot.r.player)
             log(f"      걷기 {res} {sec:.0f}초, 위치 {tuple(round(v) for v in me2)} | {quest_state()} {task_states()}")
             if k % 3 == 0 or res != "arrived":
