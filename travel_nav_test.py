@@ -456,12 +456,71 @@ def main():
                     continue
         return out
 
+    def fresh_guide(me):
+        """내 600 안에서 시작하는 안내선 중 가장 짧은 것. 옛 안내선(10-24: 마을행 141k)이 남아 있어도 지금 목표 쪽만 고름."""
+        best, best_len = None, 1e18
+        for g in bot.r.guides:
+            try:
+                sp = ue.q(g + bot.r._off(g, "SplineComponent"))
+                pts = bot.r.spline(sp) if sp else []
+            except Exception:
+                continue
+            if len(pts) < 2 or math.dist(pts[0][:2], me[:2]) > 600:
+                continue
+            ln = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
+            if ln < best_len:
+                best, best_len = pts, ln
+        if best:
+            return best, "guide"
+        return bot.r.guide_path(me[:2], press_xy=me[:2])
+
+    gates_cache = {"t": 0.0, "list": []}
+
+    def gates_near(me, radius=2500):
+        """이름에 Gate가 들어간 문 액터(장치 Gimmick 제외) 위치. 30초마다 다시 훑음."""
+        if time.time() - gates_cache["t"] > 30:
+            gates_cache["t"] = time.time()
+            out, t0 = [], time.time()
+            for o in ue.iter_objects():
+                if time.time() - t0 > 6:
+                    break
+                try:
+                    c = ue.clsname(o)
+                    if "Gate" in c and "Gimmick" not in c and not ue.objname(o).startswith("Default__"):
+                        out.append(bot.r.loc(o))
+                except Exception:
+                    continue
+            gates_cache["list"] = out
+        return [g for g in gates_cache["list"] if math.dist(g[:2], me[:2]) < radius]
+
+    def via_gate(me, q):
+        """me→q 직선이 문 액터 500 안을 지나면 문 앞 → 문 가운데 → 문 너머 점을 끼워 넣음(10-24 DesertGate 앞에서 30초씩 반복)."""
+        dx, dy = q[0] - me[0], q[1] - me[1]
+        L = math.hypot(dx, dy) or 1.0
+        ux, uy = dx / L, dy / L
+        for g in gates_near(me):
+            t = ((g[0] - me[0]) * ux + (g[1] - me[1]) * uy)
+            if not (-200 < t < L + 200):
+                continue
+            off = abs((g[0] - me[0]) * uy - (g[1] - me[1]) * ux)
+            if off < 500:
+                return [(g[0] - ux * 350, g[1] - uy * 350, g[2]), (g[0], g[1], g[2]), (g[0] + ux * 450, g[1] + uy * 450, g[2])]
+        return []
+
     def walk_guide(pts, j0, dist_limit):
         """안내선 점을 차례로 클릭(점당 최대 8초, 150 안이면 다음 점). 2초 동안 100도 못 움직이면 점프 한 번."""
         t0 = time.time()
         acc = 0.0
         prev = pts[j0]
+        seq = []
+        here = bot.r.loc(bot.r.player)
         for q in pts[j0 + 1:]:
+            seq.extend(via_gate(here, q))
+            seq.append(q)
+            here = q
+        if len(seq) > len(pts[j0 + 1:]):
+            log(f"      (문 지나기 점 {len(seq) - len(pts[j0 + 1:])}개 끼움)")
+        for q in seq:
             acc += math.dist(prev[:2], q[:2])
             prev = q
             ts, last_p, last_t = time.time(), bot.r.loc(bot.r.player), time.time()
@@ -497,9 +556,7 @@ def main():
                 pad.tap("LEFT_THUMB", hold=0.15)   # 안내선 = 패드 L3(10-24 확인, 휠 클릭은 안 먹힘)
             time.sleep(1.5)
             bot.r.scan()
-            pts, kind = bot.r.guide_path(me[:2], press_xy=me[:2])
-            if not pts:
-                pts, kind = bot.r.guide_path(me[:2])
+            pts, kind = fresh_guide(me)
             if not pts:
                 misses += 1
                 log(f"  [{k}] 안내선 없음({misses}번째) 위치 {tuple(round(v) for v in me)}")
