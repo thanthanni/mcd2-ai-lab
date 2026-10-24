@@ -384,7 +384,8 @@ def main():
         log(f"  근처 퀘스트 대상 {len(cands)}개(가까운 순):")
         for d, on, n, p, _ in cands[:20]:
             log(f"    {d:6.0f} {n} {on[:70]} {tuple(round(v) for v in p)}")
-        pick = next((c for c in cands if "CA05" in c[1] and "Giver" in c[1]), None) or next((c for c in cands if "CA05" in c[1]), None)
+        pick = next((c for c in cands if "CA05" in c[1] and "Giver" in c[1]), None) if not GOTO else None
+        pick = pick or next((c for c in cands if "CA05" in c[1]), None)
         if not pick:
             log("  CA05 대상 없음 → 말 걸기 안 함")
             shot("no_ca05")
@@ -530,6 +531,10 @@ def main():
         bot.r.scan()
         survey_names("CA05")
         log("  퀘스트:", quest_state(), task_states())
+        if "talk" in sys.argv[2:]:   # 진행 중 상호작용 단계 시험: 가장 가까운 CA05 NPC에게 걸어가 좌클릭
+            quest_meet()
+            time.sleep(2)
+            log("  퀘스트(말 건 뒤):", quest_state(), task_states())
         nav.save()
         pad.reset()
         bot.stop = True
