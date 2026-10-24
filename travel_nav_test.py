@@ -507,6 +507,22 @@ def main():
                 return [(g[0] - ux * 350, g[1] - uy * 350, g[2]), (g[0], g[1], g[2]), (g[0] + ux * 450, g[1] + uy * 450, g[2])]
         return []
 
+    stuck_n = [0]
+
+    def away_from_npcs(tgt, me):
+        """클릭할 곳 200 안에 NPC(상인 등)가 있으면 이동 방향 옆으로 250 비켜 찍음(NPC 클릭 = 대화·상점 열림)."""
+        try:
+            npcs = [bot.r.loc(o) for o in list(bot.r.npcs) + list(bot.r.quest_objs)]
+        except Exception:
+            return tgt
+        for n in npcs:
+            if math.dist(n[:2], tgt[:2]) < 200:
+                dx, dy = tgt[0] - me[0], tgt[1] - me[1]
+                L = math.hypot(dx, dy) or 1.0
+                side = 1 if (n[0] - me[0]) * (-dy) + (n[1] - me[1]) * dx < 0 else -1   # NPC 반대쪽으로
+                return (tgt[0] - dy / L * 250 * side, tgt[1] + dx / L * 250 * side, tgt[2])
+        return tgt
+
     def walk_guide(pts, j0, dist_limit):
         """안내선 점을 차례로 클릭(점당 최대 8초, 150 안이면 다음 점). 2초 동안 100도 못 움직이면 점프 한 번."""
         t0 = time.time()
@@ -530,11 +546,15 @@ def main():
                 if math.dist(me[:2], q[:2]) < 150:
                     break
                 tgt = q if math.dist(me[:2], q[:2]) < 900 else tuple(me[i] + (q[i] - me[i]) * 900 / math.dist(me[:2], q[:2]) for i in range(3))
+                tgt = away_from_npcs(tgt, me)
                 if not bot.clicker.click_world(tgt, me):
                     pad.stick(*bot.to_stick(q[0] - me[0], q[1] - me[1]))
                 if time.time() - last_t > 2:
                     if math.dist(me[:2], last_p[:2]) < 100:
-                        pad.tap("A")
+                        # 상점 등 창이 열렸을 수 있음(10-24: 문 옆 마을 상인 클릭 → 상점에서 끝까지 멈춤). A는 상점에선 '구매'라
+                        # 먼저 B로 닫고, 다음 번에 점프
+                        stuck_n[0] += 1
+                        pad.tap("B" if stuck_n[0] % 2 else "A")
                     last_p, last_t = me, time.time()
                 time.sleep(0.1)
             pad.stick(0, 0)
