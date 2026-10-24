@@ -578,7 +578,7 @@ def main():
             total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
             log(f"  [{k}] 안내선 {kind} {len(pts)}점 길이 {total:.0f}, 끝 {tuple(round(v) for v in pts[-1])} → 목표 {tuple(round(v) for v in tgt)}")
             res, sec = walk(tgt, 30 + min(acc, total) / 200)
-            if res == "failed":
+            if res in ("failed", "timeout"):
                 # 내 길찾기 지도가 끊긴 곳(10-24: 열린 문간에서 출발점이 지도 밖) → 게임이 계산한 안내선 점을 직접 클릭해 따라감
                 res, sec = walk_guide(pts, j0, 2500)
                 log(f"      (안내선 직접 따라가기 {res})")
