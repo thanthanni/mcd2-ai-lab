@@ -84,6 +84,7 @@ class NavMesh:
     def __init__(self, blobs):
         self.verts = []      # 다각형별 [(X, Y, Z) 언리얼]
         self.center = []
+        self.area = []       # 다각형별 땅 종류 번호(Recast area, 0=못 걷는 곳은 제외됨) — 물 등 구분용(10-24 조사)
         self.adj = []        # 다각형별 [(이웃, 통로 a, 통로 b)]  통로는 언리얼 (X, Y, Z)
         self.grid = {}       # (gx, gy) 1000칸 → 다각형 번호들
         self.tile_ground, self.tile_off, self.tile_first = [], [], []
@@ -117,6 +118,7 @@ class NavMesh:
                 cy = sum(p[1] for p in pv) / n
                 cz = sum(p[2] for p in pv) / n
                 self.center.append((cx, cy, cz))
+                self.area.append(area)
                 self.adj.append([])
                 xs, ys = [p[0] for p in pv], [p[1] for p in pv]
                 for gx in range(int(min(xs) // 1000), int(max(xs) // 1000) + 1):
