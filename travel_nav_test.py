@@ -464,10 +464,9 @@ def main():
         while time.time() < run_deadline - 20:
             k += 1
             me = bot.r.loc(bot.r.player)
+            modal_guard()
             if screen.u32.GetForegroundWindow() == bot.clicker.hwnd:
-                screen.u32.mouse_event(0x0020, 0, 0, 0, 0)
-                time.sleep(0.08)
-                screen.u32.mouse_event(0x0040, 0, 0, 0, 0)
+                pad.tap("LEFT_THUMB", hold=0.15)   # 안내선 = 패드 L3(10-24 확인, 휠 클릭은 안 먹힘)
             time.sleep(1.5)
             bot.r.scan()
             pts, kind = bot.r.guide_path(me[:2], press_xy=me[:2])
