@@ -79,6 +79,30 @@ def main():
         time.sleep(0.4)
     bot.calibrate()
 
+    modal_t = {"t": 0.0}
+
+    def modal_guard(every=5.0):
+        """연결 해제 창(0014)이 늦게 떠서 시작할 때 3초 검사로는 놓침(10-24: 떠 있는 채로 L3·휠 클릭 다 무시)
+        → every초마다 화면 한 장으로 확인하고, 떠 있으면 닫기 처리."""
+        now = time.time()
+        if now - modal_t["t"] < every:
+            return
+        modal_t["t"] = now
+        try:
+            from pathlib import Path
+            from PIL import Image, ImageGrab
+            hwnd = bot.clicker.hwnd
+            if screen.u32.GetForegroundWindow() != hwnd:
+                return
+            x, y, w, h = screen.client_rect(hwnd)
+            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+            with Image.open(Path(gamewin.__file__).with_name("controller_disconnected.png")) as tpl:
+                if gamewin.controller_prompt_matches(img, tpl):
+                    log("  [창] 컨트롤러 연결 해제 창 발견 → 닫기")
+                    gamewin.dismiss_controller_prompt(pad)
+        except Exception as e:
+            log("  [창] 확인 실패:", e)
+
     inst_cache: dict[str, list] = {}
 
     def instances(name, budget=8.0):
@@ -160,6 +184,7 @@ def main():
         budget_set = False
         hp_prev, fight_until, last_wedge = None, 0.0, nav.stats["wedge"]
         while time.time() - t0 < limit and time.time() < run_deadline:
+            modal_guard()
             tick = time.time()
             try:
                 hp, hpm = bot.r.hp(bot.r.player)
@@ -536,6 +561,8 @@ def main():
         ways = [("패드 L3", lambda: pad.tap("LEFT_THUMB", hold=0.15)), ("휠 클릭(화면 가운데)", mid_center),
                 ("패드 L3 길게", lambda: pad.tap("LEFT_THUMB", hold=0.6)), ("휠 클릭 다시", mid_center)]
         for k, (wname, press) in enumerate(ways):
+            modal_t["t"] = 0.0
+            modal_guard()
             me = bot.r.loc(bot.r.player)
             if screen.u32.GetForegroundWindow() == bot.clicker.hwnd:
                 press()
