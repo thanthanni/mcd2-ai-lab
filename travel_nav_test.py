@@ -526,13 +526,21 @@ def main():
     run_deadline = t0 + SECONDS
     if "guideinfo" in sys.argv[2:]:   # 조사: 휠 클릭 → 안내선 끝(지금 퀘스트 목표)과 길이, 가까운 역만 적음. 이동 없음.
         log("  퀘스트:", quest_state(), task_states())
-        for k in range(3):
+        def mid_center():
+            x, y, w, h = screen.client_rect(bot.clicker.hwnd)
+            screen.u32.SetCursorPos(x + w // 2, y + int(h * 0.45))
+            time.sleep(0.2)
+            screen.u32.mouse_event(0x0020, 0, 0, 0, 0)
+            time.sleep(0.1)
+            screen.u32.mouse_event(0x0040, 0, 0, 0, 0)
+        ways = [("패드 L3", lambda: pad.tap("LEFT_THUMB", hold=0.15)), ("휠 클릭(화면 가운데)", mid_center),
+                ("패드 L3 길게", lambda: pad.tap("LEFT_THUMB", hold=0.6)), ("휠 클릭 다시", mid_center)]
+        for k, (wname, press) in enumerate(ways):
             me = bot.r.loc(bot.r.player)
             if screen.u32.GetForegroundWindow() == bot.clicker.hwnd:
-                screen.u32.mouse_event(0x0020, 0, 0, 0, 0)
-                time.sleep(0.08)
-                screen.u32.mouse_event(0x0040, 0, 0, 0, 0)
-            time.sleep(2.0)
+                press()
+            log(f"  시도 {k + 1}: {wname}")
+            time.sleep(2.5)
             bot.r.scan()
             pts, kind = bot.r.guide_path(me[:2], press_xy=me[:2])
             if pts:
@@ -545,6 +553,7 @@ def main():
                 shot("guideinfo")
                 break
             log(f"  안내선 없음({k + 1}번째)")
+            shot(f"noguide_{k}")
         pad.reset()
         bot.stop = True
         return
