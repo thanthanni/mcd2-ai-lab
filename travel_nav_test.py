@@ -512,6 +512,44 @@ def main():
         return []
 
     stuck_n = [0]
+    hpwatch = {"hist": [], "shot": 0.0, "pot": 0.0}
+
+    def survive():
+        """안내선 직접 따라가기에도 생존 처리(10-25: 7초에 104→4.7 깎이고 물약 없이 걷다 사망).
+        체력 기록 → 3초에 30% 넘게 깎이면 사진 + 원인 조사용 주변 몹 기록, 40% 아래면 물약(30초 쿨). 죽었으면 True."""
+        try:
+            hp, hpm = bot.r.hp(bot.r.player)
+        except Exception:
+            return False
+        if hp is None:
+            return False
+        now = time.time()
+        if hp <= 0:
+            return True
+        h = hpwatch["hist"]
+        h.append((now, hp))
+        while h and now - h[0][0] > 3:
+            h.pop(0)
+        if hpm and h and h[0][1] - hp > 0.3 * hpm and now - hpwatch["shot"] > 10:
+            hpwatch["shot"] = now
+            me = bot.r.loc(bot.r.player)
+            near = []
+            for o, n in list(bot.r.mobs.items()):
+                try:
+                    p = bot.r.loc(o)
+                    d = math.dist(p[:2], me[:2])
+                    if d < 2500:
+                        near.append((round(d), n))
+                except Exception:
+                    continue
+            log(f"  [피해] 3초에 {h[0][1]:.0f}→{hp:.0f}, 위치 {tuple(round(v) for v in me)}, 주변 몹 {sorted(near)[:8]}")
+            shot("bigdamage")
+        if hpm and hp / hpm < 0.4 and now - hpwatch["pot"] > 30 and \
+                (bot.r.attr(bot.r.player, "ATR_Health", "HealthPotionCharges") or 0) >= 1:
+            pad.trigger(left=True)
+            hpwatch["pot"] = now
+            log(f"  [생존] 물약 (체력 {hp:.0f}/{hpm:.0f})")
+        return False
 
     def away_from_npcs(tgt, me):
         """클릭할 곳 200 안에 NPC(상인 등)가 있으면 이동 방향 옆으로 250 비켜 찍음(NPC 클릭 = 대화·상점 열림)."""
@@ -546,6 +584,8 @@ def main():
             ts, last_p, last_t = time.time(), bot.r.loc(bot.r.player), time.time()
             while time.time() - ts < 8 and time.time() < run_deadline:
                 modal_guard()
+                if survive():
+                    return "died", time.time() - t0
                 me = bot.r.loc(bot.r.player)
                 if math.dist(me[:2], q[:2]) < 150:
                     break
