@@ -1,1 +1,1 @@
-57_quest_step_probe.bat
+58_goto_check.bat

@@ -24,7 +24,13 @@ SECONDS = float(sys.argv[1]) if len(sys.argv) > 1 else 1200.0
 PROBE = "probe" in sys.argv[2:]
 LIST = "list" in sys.argv[2:]
 QUEST = "quest" in sys.argv[2:]
-FOLLOW = "follow" in sys.argv[2:]   # 추적 중인 퀘스트 안내선(휠 클릭)을 따라 걷기(10-23 스프린트3)   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
+FOLLOW = "follow" in sys.argv[2:]
+# 역 목록 순서(10-24 확인: 53 사진 + 좌표 대조). 목록은 지금 역에 커서가 있고 아래로 갈수록 번호가 큼.
+STATIONS = {"Brave Haven": (0, (14819, -5500, 4500)), "PlainsA1-Barn": (1, (29000, 36881, 4300)),
+            "PlainsA1-Border": (2, (17100, 39081, 2500)), "ForestA1-Outpost": (3, (13519, 61401, 2000)),
+            "ForestA1-SpiderCaveExit": (4, (27018, 54700, 1400)), "ForestA1-DangerZone": (5, (14518, 83301, 1400)),
+            "PlainsA2-VillagerOasis": (6, (-11181, 70100, 600))}
+GOTO = next((a.split(":", 1)[1] for a in sys.argv[2:] if a.startswith("goto:")), None)   # 예) goto:ForestA1-DangerZone   # 추적 중인 퀘스트 안내선(휠 클릭)을 따라 걷기(10-23 스프린트3)   # 웅덩이 연못(목록 6칸 아래)으로 빠른 이동 → 메인 퀘스트 주민 찾아 말 걸기(10-23 스프린트2)
 OASIS = (-11181, 70100, 600)       # PlainsA2-VillagerOasis(웅덩이 연못으로 추정) 역 위치
      # 역에 도착하면 역 목록만 사진으로 훑고 끝(빠른 이동 안 함)   # 역에 도착하면 빠른 이동 대신 상호작용 입력 시험만
 ROUTE = {"Brave Haven": ("ForestA1-Outpost", 3), "ForestA1-Outpost": ("Brave Haven", -3)}
@@ -464,8 +470,63 @@ def main():
                 pad.tap("A")
                 time.sleep(10)
 
+    def goto_station(target):
+        """가장 가까운 아는 역까지 걸어가서 목록 칸 차이만큼 빠른 이동. 도착은 좌표로 확인."""
+        me = bot.r.loc(bot.r.player)
+        here = min(STATIONS, key=lambda n: math.dist(STATIONS[n][1][:2], me[:2]))
+        if here == target and math.dist(STATIONS[here][1][:2], me[:2]) < 3000:
+            log(f"  이미 {target} 근처")
+            return True
+        S = stations()
+        sp = min(S.values(), key=lambda p: math.dist(p[:2], STATIONS[here][1][:2])) if S else STATIONS[here][1]
+        d0 = math.dist(me[:2], sp[:2])
+        res, sec = walk(sp, 60 + d0 / 250)
+        log(f"  가까운 역 {here}까지 걷기 {res} {sec:.0f}초({d0:.0f})")
+        if res != "arrived":
+            shot("goto_walkfail")
+            return False
+        downs = STATIONS[target][0] - STATIONS[here][0]
+        if not travel(sp, downs):
+            return False
+        me2 = bot.r.loc(bot.r.player)
+        d = math.dist(me2[:2], STATIONS[target][1][:2])
+        log(f"  빠른 이동 {here} → {target} ({downs:+d}칸): 도착 위치 {tuple(round(v) for v in me2)}, 목표 역까지 {d:.0f}")
+        shot("goto_arrived")
+        return d < 3000
+
+    def survey_names(key="CA05", radius=12000):
+        """도착한 곳에서 이름에 key가 들어간 액터를 위치와 함께 적음(퀘스트 목표 지점 찾기)."""
+        me = bot.r.loc(bot.r.player)
+        rows, t0 = [], time.time()
+        for o in ue.iter_objects():
+            if time.time() - t0 > 60:
+                break
+            try:
+                n = ue.objname(o)
+                if key not in n or n.startswith("Default__"):
+                    continue
+                p = bot.r.loc(o)
+                rows.append((math.dist(p[:2], me[:2]), ue.clsname(o), n, p))
+            except Exception:
+                continue
+        rows.sort()
+        log(f"  이름에 {key} 들어간 위치 있는 객체 {len(rows)}개:")
+        for d, c, n, p in rows[:40]:
+            log(f"    {d:7.0f} {c} {n[:70]} {tuple(round(v) for v in p)}")
+
     t0, tries = time.time(), []
     run_deadline = t0 + SECONDS
+    if GOTO:
+        ok = goto_station(GOTO)
+        log(f"[결과] {GOTO} 빠른 이동 {'성공' if ok else '실패'}")
+        time.sleep(4)
+        bot.r.scan()
+        survey_names("CA05")
+        log("  퀘스트:", quest_state(), task_states())
+        nav.save()
+        pad.reset()
+        bot.stop = True
+        return
     if FOLLOW:
         follow()
         nav.save()
