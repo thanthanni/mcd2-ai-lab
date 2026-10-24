@@ -37,6 +37,11 @@ def log(*a):
     s = " ".join(str(x) for x in a)
     print(s, flush=True)
     lines.append(s)
+    try:   # 중간에 멈춰 강제 종료돼도 여기까지는 남게(10-23 follow 판이 56초 뒤 멈춰 결과 0줄)
+        with open(OUT, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except OSError:
+        pass
 
 
 def main():
@@ -480,6 +485,9 @@ def main():
 
 
 if __name__ == "__main__":
+    import faulthandler
+    _hang = open(os.path.join(HERE, "tnav_hang.txt"), "w", encoding="utf-8")
+    faulthandler.dump_traceback_later(120, repeat=True, file=_hang)   # 2분마다 지금 도는 줄을 적음(멈춘 곳 찾기)
     try:
         main()
     except Exception:
