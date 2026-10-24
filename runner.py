@@ -195,13 +195,22 @@ def resend_unsent():
         pass
     open(mark, "w").write(str(time.time()))
     import uploader
+    fails = []
     for d in sorted(os.listdir(UNSENT)):
         dp = os.path.join(UNSENT, d)
         for name in sorted(os.listdir(dp)):
-            if not uploader.send_file(name, title=f"{d} 다시 보냄", path=os.path.join(dp, name)):
-                return
-            os.remove(os.path.join(dp, name))
-        os.rmdir(dp)
+            fp = os.path.join(dp, name)
+            if os.path.getsize(fp) == 0:                  # 빈 파일은 보낼 수 없음(예전엔 이게 줄 전체를 막았음, 10-24)
+                os.remove(fp)
+                continue
+            if uploader.send_file(name, title=f"{d} 다시 보냄", path=fp):
+                os.remove(fp)
+            else:
+                fails.append(name)
+        if not os.listdir(dp):
+            os.rmdir(dp)
+    if fails:
+        status(f"결과 {len(fails)}개 아직 못 보냄({', '.join(fails[:3])}) - 10분 뒤 다시")
 
 
 def main():
@@ -306,7 +315,7 @@ def main():
             for name in names:
                 if uploader.send_file(name, title=f"{jid} {k + 1}/{reps}"):
                     n += 1
-                else:                                         # 못 보냈으면 복사해 두고 나중에 다시
+                elif os.path.getsize(os.path.join(HERE, name)) > 0:   # 못 보냈으면 복사해 두고 나중에 다시(빈 파일은 버림)
                     keep = os.path.join(UNSENT, f"{jid.replace('@', '_')}-{k + 1}of{reps}")
                     os.makedirs(keep, exist_ok=True)
                     shutil.copyfile(os.path.join(HERE, name), os.path.join(keep, name))

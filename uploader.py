@@ -101,6 +101,10 @@ def send_file(name, title="result", path=None):
             urllib.request.urlopen(req, timeout=120).read()
         except Exception as e:
             print(f"{pname}: 보내기 실패 {e}")
+            try:   # 왜 실패했는지 상태 글로 남김(10-24 결과가 소리 없이 안 옴)
+                send_text("status", f"{pname} 보내기 실패: {str(e)[:120]}")
+            except Exception:
+                pass
             return 0
         time.sleep(1)
     return 1
