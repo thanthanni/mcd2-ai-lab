@@ -161,7 +161,12 @@ def main():
                     pad.reset()
                     return "died", time.time() - t0
                 # nav_test에서 확인했던 최소 생존 대응: 물약 + 붙어서 피해를 주는 적만 반격.
-                if hp is not None and hpm and hp / hpm < 0.4 and (bot.r.attr(bot.r.player, "ATR_Health", "HealthPotionCharges") or 0) >= 1 and tick - bot.last_potion > 3:
+                # 체력이 그대로인데 3초마다 물약을 누르던 문제(10-24: 111.9/최대값 37%로 106번) → 최근 맞았을 때만, 물약 쿨 30초
+                hurt = hp_prev is not None and hp is not None and hp < hp_prev - 1
+                if hurt:
+                    bot.last_hurt = tick
+                if hp is not None and hpm and hp / hpm < 0.4 and tick - getattr(bot, "last_hurt", 0) < 5 \
+                        and (bot.r.attr(bot.r.player, "ATR_Health", "HealthPotionCharges") or 0) >= 1 and tick - bot.last_potion > 30:
                     pad.trigger(left=True)
                     bot.last_potion = tick
                     log("[이동] 물약 사용")
@@ -438,10 +443,13 @@ def main():
                 time.sleep(3)
                 continue
             misses = 0
+            # 안내선 첫 점(예전에 휠을 누른 자리)부터 재면 이미 지난 곳이 목표가 됨(10-24: 같은 자리 '도착' 158번)
+            # → 내 위치에서 가장 가까운 점부터 2500 앞. 그래도 400 안이면 다음 점들로 더 밀어냄.
+            j0 = min(range(len(pts)), key=lambda j: math.dist(pts[j][:2], me[:2]))
             acc, tgt = 0.0, pts[-1]
-            for a, b in zip(pts, pts[1:]):
+            for a, b in zip(pts[j0:], pts[j0 + 1:]):
                 acc += math.dist(a[:2], b[:2])
-                if acc >= 2500:
+                if acc >= 2500 and math.dist(b[:2], me[:2]) > 400:
                     tgt = b
                     break
             total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
