@@ -330,7 +330,11 @@ class NavMesh:
         apex = left = right = pts[0][0]
         ai = li = ri = 0
         i = 1
+        steps, cap = 0, 8 * len(pts) + 50
         while i < len(pts):
+            steps += 1
+            if steps > cap:   # 겹친 점·퇴화한 통로에서 같은 자리를 끝없이 도는 경우(10-23/24 따라가기 판이 멈춤) → 통로 가운데 점으로
+                return [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2) for _, a, b in portals] + [tuple(goal)]
             nl, nr = pts[i]
             if cross(apex, right, nr) >= 0:                        # 오른쪽 변을 안쪽으로 좁힘
                 if apex == right or cross(apex, left, nr) < 0:

@@ -85,9 +85,31 @@ def main():
                 continue
         return out
 
+    mesh_actor = {"o": None}
+
     def mesh_fn():
-        actor = next(o for o in ue.find_instances("LovikaRecastNavMesh") if not ue.objname(o).startswith("Default__"))
-        return navmesh.read_navmesh(ue, actor)
+        # 20초마다 객체 13만 개를 다시 뒤지던 찾기가 10-23/24 따라가기 판에서 40분 넘게 안 끝남(tnav_hang: find_instances)
+        # → 한 번 찾은 지도 액터를 계속 쓰고, 다시 찾을 땐 8초 넘으면 이번 갱신은 포기
+        a = mesh_actor["o"]
+        if a:
+            try:
+                return navmesh.read_navmesh(ue, a)
+            except Exception:
+                mesh_actor["o"] = None
+        t0 = time.time()
+        for o in ue.iter_objects():
+            if time.time() - t0 > 8:
+                raise TimeoutError("게임 지도 액터 찾기 8초 넘음")
+            try:
+                if ue.clsname(o) == "LovikaRecastNavMesh" and not ue.objname(o).startswith("Default__"):
+                    mesh_actor["o"] = o
+                    break
+            except Exception:
+                continue
+        else:
+            raise LookupError("게임 지도 액터 없음")
+        log(f"[걷기] 게임 지도 액터 찾음 {time.time() - t0:.1f}초")
+        return navmesh.read_navmesh(ue, mesh_actor["o"])
 
     nav = navmod.Nav(bot.r, pad, bot.clicker, bot.to_stick, log, mesh_fn=mesh_fn)
 

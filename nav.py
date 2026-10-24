@@ -289,9 +289,8 @@ class Nav:
             try:
                 self.mesh = self.mesh_fn()
                 self.path = []
-            except Exception as e:
-                self.log("[걷기] 게임 지도 못 읽음:", e)
-                self.mesh_fn = None
+            except Exception as e:   # 한 번 못 읽어도 끄지 않고 지난 지도로 계속(다음 20초에 다시)
+                self.log("[걷기] 게임 지도 못 읽음(지난 지도 사용):", e)
         if not self.path:
             self.path, self.i = self.plan(me), 0
             if not self.path:
