@@ -473,17 +473,24 @@ def main():
     def goto_station(target):
         """가장 가까운 아는 역까지 걸어가서 목록 칸 차이만큼 빠른 이동. 도착은 좌표로 확인."""
         me = bot.r.loc(bot.r.player)
-        here = min(STATIONS, key=lambda n: math.dist(STATIONS[n][1][:2], me[:2]))
-        if here == target and math.dist(STATIONS[here][1][:2], me[:2]) < 3000:
+        order = sorted(STATIONS, key=lambda n: math.dist(STATIONS[n][1][:2], me[:2]))
+        if order[0] == target and math.dist(STATIONS[target][1][:2], me[:2]) < 3000:
             log(f"  이미 {target} 근처")
             return True
         S = stations()
-        sp = min(S.values(), key=lambda p: math.dist(p[:2], STATIONS[here][1][:2])) if S else STATIONS[here][1]
-        d0 = math.dist(me[:2], sp[:2])
-        res, sec = walk(sp, 60 + d0 / 250)
-        log(f"  가까운 역 {here}까지 걷기 {res} {sec:.0f}초({d0:.0f})")
-        if res != "arrived":
+        # 가장 가까운 역이 못 가는 곳일 수 있음(10-24: 허니브룩 다리 역이 올라간 다리 건너편) → 가까운 순으로 3곳까지
+        for here in order[:3]:
+            if here == target:
+                continue
+            sp = min(S.values(), key=lambda p: math.dist(p[:2], STATIONS[here][1][:2])) if S else STATIONS[here][1]
+            me = bot.r.loc(bot.r.player)
+            d0 = math.dist(me[:2], sp[:2])
+            res, sec = walk(sp, 40 + d0 / 250)
+            log(f"  역 {here}까지 걷기 {res} {sec:.0f}초({d0:.0f})")
+            if res == "arrived":
+                break
             shot("goto_walkfail")
+        else:
             return False
         downs = STATIONS[target][0] - STATIONS[here][0]
         if not travel(sp, downs):
