@@ -1,1 +1,1 @@
-56_area_probe.bat
+60_gimmick_probe.bat
