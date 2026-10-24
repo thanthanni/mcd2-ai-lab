@@ -487,24 +487,28 @@ def main():
                 try:
                     c = ue.clsname(o)
                     if "Gate" in c and "Gimmick" not in c and not ue.objname(o).startswith("Default__"):
-                        out.append(bot.r.loc(o))
+                        out.append((bot.r.loc(o), bot.r.yaw(o)))
                 except Exception:
                     continue
             gates_cache["list"] = out
-        return [g for g in gates_cache["list"] if math.dist(g[:2], me[:2]) < radius]
+        return [g for g in gates_cache["list"] if math.dist(g[0][:2], me[:2]) < radius]
 
     def via_gate(me, q):
         """me→q 직선이 문 액터 500 안을 지나면 문 앞 → 문 가운데 → 문 너머 점을 끼워 넣음(10-24 DesertGate 앞에서 30초씩 반복)."""
         dx, dy = q[0] - me[0], q[1] - me[1]
         L = math.hypot(dx, dy) or 1.0
         ux, uy = dx / L, dy / L
-        for g in gates_near(me):
+        for g, yaw in gates_near(me):
             t = ((g[0] - me[0]) * ux + (g[1] - me[1]) * uy)
             if not (-200 < t < L + 200):
                 continue
             off = abs((g[0] - me[0]) * uy - (g[1] - me[1]) * ux)
             if off < 500:
-                return [(g[0] - ux * 350, g[1] - uy * 350, g[2]), (g[0], g[1], g[2]), (g[0] + ux * 450, g[1] + uy * 450, g[2])]
+                # 문 구멍 방향 = 문 액터의 앞(yaw)축. 진행 방향(대각선)으로 잡으면 문틀을 찍음(10-24: 기둥 위로 올라감)
+                fx, fy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+                if fx * ux + fy * uy < 0:
+                    fx, fy = -fx, -fy
+                return [(g[0] - fx * 450, g[1] - fy * 450, g[2]), (g[0], g[1], g[2]), (g[0] + fx * 550, g[1] + fy * 550, g[2])]
         return []
 
     stuck_n = [0]
@@ -554,7 +558,8 @@ def main():
                         # 상점 등 창이 열렸을 수 있음(10-24: 문 옆 마을 상인 클릭 → 상점에서 끝까지 멈춤). A는 상점에선 '구매'라
                         # 먼저 B로 닫고, 다음 번에 점프
                         stuck_n[0] += 1
-                        pad.tap("B" if stuck_n[0] % 2 else "A")
+                        near_gate = bool(gates_near(me, 900))   # 문 근처 점프는 기둥 위로 올라가게 함 → B만
+                        pad.tap("B" if (near_gate or stuck_n[0] % 2) else "A")
                     last_p, last_t = me, time.time()
                 time.sleep(0.1)
             pad.stick(0, 0)
