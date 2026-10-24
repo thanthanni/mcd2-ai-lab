@@ -109,6 +109,21 @@ def main():
             if "Delegate" in q.kind or name in ("RootComponent",):
                 continue
             log(f"  {name} ({q.kind}) = {val(o + q.offset, q)}")
+        # 딸린 부품 속도 펼침: 상태 트리거(현재 상태값 후보), 닫힌/열린 문 모양(보이는지)
+        for cn in ("ActorStateTriggerComponent", "DoorClosedStaticMeshComponent", "DoorOpenedStaticMeshComponent"):
+            if cn not in props:
+                continue
+            comp = ue.q(o + props[cn].offset)
+            if not comp:
+                continue
+            log(f"  -- {cn}")
+            for name, q in sorted(ue.oprops(comp).items(), key=lambda x: x[1].offset):
+                if "Delegate" in q.kind:
+                    continue
+                low = name.lower()
+                if cn != "ActorStateTriggerComponent" and not any(k in low for k in ("visible", "hidden", "collision", "active")):
+                    continue
+                log(f"     {name} ({q.kind}) = {val(comp + q.offset, q)}")
 
 
 if __name__ == "__main__":
