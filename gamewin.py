@@ -91,7 +91,8 @@ def controller_prompt_matches(image, template):
     covered = ImageChops.multiply(expected, actual.filter(ImageFilter.MaxFilter(3))).histogram()[255] / ne
     precise = ImageChops.multiply(actual, expected.filter(ImageFilter.MaxFilter(3))).histogram()[255] / na
     # shortcut: 한국어·현재 UI 크기의 확인 창, 언어나 UI 배율 변경 시 템플릿 갱신.
-    return covered > 0.90 and precise > 0.90
+    # 10-24: 실제 창이 0.81~0.86으로 나와 0.90 기준에서 놓침. 창이 아닌 화면 18장은 최대 covered 0.70·precise 0.41.
+    return covered > 0.75 and precise > 0.75
 
 
 def dismiss_controller_prompt(pad):
