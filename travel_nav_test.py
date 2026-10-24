@@ -192,6 +192,7 @@ def main():
         hp_prev, fight_until, last_wedge = None, 0.0, nav.stats["wedge"]
         while time.time() - t0 < limit and time.time() < run_deadline:
             modal_guard()
+            survive()
             tick = time.time()
             try:
                 hp, hpm = bot.r.hp(bot.r.player)
