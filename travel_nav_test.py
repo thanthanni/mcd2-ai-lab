@@ -73,9 +73,30 @@ def main():
         time.sleep(0.4)
     bot.calibrate()
 
+    inst_cache: dict[str, list] = {}
+
+    def instances(name, budget=8.0):
+        """클래스 이름이 name인 객체 목록. uemem.find_instances가 걷는 중(새 구역 불러오는 중) 안 끝나는 일이 있어서
+        (10-24 tnav_hang: find_instances에서 40분) 직접 훑되 budget초 넘으면 거기까지만. 찾은 목록은 기억해 두고 다시 씀."""
+        if inst_cache.get(name):
+            return inst_cache[name]
+        out, t0 = [], time.time()
+        for o in ue.iter_objects():
+            if time.time() - t0 > budget:
+                log(f"  ({name} 찾기 {budget:.0f}초 넘어 {len(out)}개에서 멈춤)")
+                break
+            try:
+                if ue.clsname(o) == name and not ue.objname(o).startswith("Default__"):
+                    out.append(o)
+            except Exception:
+                continue
+        if out:
+            inst_cache[name] = out
+        return out
+
     def stations():
         out = {}
-        for o in ue.find_instances("BP_MinecartStation_C"):
+        for o in instances("BP_MinecartStation_C"):
             try:
                 props = ue.oprops(o)
                 name = ue.fname(o + props["NameOnMap"].offset)
@@ -316,7 +337,7 @@ def main():
 
     def quest_state():
         out = {}
-        for q in ue.find_instances("LiveQuest"):
+        for q in instances("LiveQuest"):
             try:
                 pr = ue.oprops(q)
                 qid = ue.fstring(q + pr["ID"].offset) if pr["ID"].kind == "StrProperty" else ue.fname(q + pr["ID"].offset)
@@ -327,7 +348,7 @@ def main():
             except Exception:
                 continue
         try:
-            runner = next(o for o in ue.find_instances("BP_QuestRunner_C") if not ue.objname(o).startswith("Default__"))
+            runner = next(o for o in instances("BP_QuestRunner_C") if not ue.objname(o).startswith("Default__"))
             pr = ue.oprops(runner)
             fq = ue.q(runner + pr["FocusedQuest"].offset)
             out["추적"] = ue.objname(fq) if fq else "없음"
@@ -380,7 +401,7 @@ def main():
     def task_states():
         out = {}
         for cls in ("ExploreTask", "InteractTask"):
-            for t in ue.find_instances(cls):
+            for t in instances(cls):
                 try:
                     pr = ue.oprops(t)
                     tid = ue.fstring(t + pr["ID"].offset) if pr["ID"].kind == "StrProperty" else ue.fname(t + pr["ID"].offset)
