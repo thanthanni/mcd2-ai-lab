@@ -524,6 +524,30 @@ def main():
 
     t0, tries = time.time(), []
     run_deadline = t0 + SECONDS
+    if "guideinfo" in sys.argv[2:]:   # 조사: 휠 클릭 → 안내선 끝(지금 퀘스트 목표)과 길이, 가까운 역만 적음. 이동 없음.
+        log("  퀘스트:", quest_state(), task_states())
+        for k in range(3):
+            me = bot.r.loc(bot.r.player)
+            if screen.u32.GetForegroundWindow() == bot.clicker.hwnd:
+                screen.u32.mouse_event(0x0020, 0, 0, 0, 0)
+                time.sleep(0.08)
+                screen.u32.mouse_event(0x0040, 0, 0, 0, 0)
+            time.sleep(2.0)
+            bot.r.scan()
+            pts, kind = bot.r.guide_path(me[:2], press_xy=me[:2])
+            if pts:
+                total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
+                end = pts[-1]
+                log(f"  안내선 {kind} {len(pts)}점, 길이 {total:.0f}, 시작 {tuple(round(v) for v in pts[0])}, 끝 {tuple(round(v) for v in end)}")
+                log("  점들:", [tuple(round(v) for v in p) for p in pts[::max(1, len(pts) // 12)]])
+                for n in sorted(STATIONS, key=lambda n: math.dist(STATIONS[n][1][:2], end[:2]))[:3]:
+                    log(f"    끝에서 역 {n}까지 {math.dist(STATIONS[n][1][:2], end[:2]):.0f}")
+                shot("guideinfo")
+                break
+            log(f"  안내선 없음({k + 1}번째)")
+        pad.reset()
+        bot.stop = True
+        return
     if GOTO:
         ok = goto_station(GOTO)
         log(f"[결과] {GOTO} 빠른 이동 {'성공' if ok else '실패'}")

@@ -1,1 +1,1 @@
-58_goto_check.bat
+59_guideinfo_probe.bat
