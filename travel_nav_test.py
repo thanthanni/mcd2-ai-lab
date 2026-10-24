@@ -65,6 +65,13 @@ def main():
     import nav as navmod
     from rule_bot import Bot, Pad, PASSIVE
     gamewin.prepare()
+    # 지난 판 가상 패드가 빠지며 남긴 연결 해제 창은 새 패드가 생기기 전에 키보드로 닫아야 닫힘
+    # (10-24: 새 패드 연결 뒤엔 A·클릭·스페이스 모두 무시, 10-23 01:40엔 패드 없이 스페이스로 닫힘)
+    gamewin.focus_game()
+    try:
+        gamewin.dismiss_controller_prompt(None)
+    except Exception as e:
+        log("연결 해제 창(패드 만들기 전) 닫기 실패:", e)
     pad = Pad()
     ue = uemem.UE(winproc.Process(), rescan=True)
     bot = Bot(ue, pad)
