@@ -504,7 +504,7 @@ def main():
             if not (-200 < t < L + 200):
                 continue
             off = abs((g[0] - me[0]) * uy - (g[1] - me[1]) * ux)
-            if off < 500:
+            if off < 700:
                 # 문 구멍 방향 = 문 액터의 앞(yaw)축. 진행 방향(대각선)으로 잡으면 문틀을 찍음(10-24: 기둥 위로 올라감)
                 fx, fy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
                 if fx * ux + fy * uy < 0:
@@ -643,7 +643,13 @@ def main():
                     break
             total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
             log(f"  [{k}] 안내선 {kind} {len(pts)}점 길이 {total:.0f}, 끝 {tuple(round(v) for v in pts[-1])} → 목표 {tuple(round(v) for v in tgt)}")
-            res, sec = walk(tgt, 30 + min(acc, total) / 200)
+            gp = via_gate(me, tgt)
+            if gp:
+                # 문을 끼고 가는 구간은 내 길찾기(점프 연결로 문 옆 기둥 위에 올라감, 10-25 두 번) 대신 문 축 세 점을 직접 찍음
+                log(f"      (문 통과: {[tuple(round(v) for v in q) for q in gp]})")
+                res, sec = walk_guide([me] + gp + [tgt], 0, 99999)
+            else:
+                res, sec = walk(tgt, 30 + min(acc, total) / 200)
             if res in ("failed", "timeout"):
                 # 내 길찾기 지도가 끊긴 곳(10-24: 열린 문간에서 출발점이 지도 밖) → 게임이 계산한 안내선 점을 직접 클릭해 따라감
                 res, sec = walk_guide(pts, j0, 2500)
