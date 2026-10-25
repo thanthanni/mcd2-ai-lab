@@ -595,6 +595,24 @@ def main():
                     continue
             log(f"  [피해] 3초에 {h[0][1]:.0f}→{hp:.0f}, 위치 {tuple(round(v) for v in me)}, 주변 몹 {sorted(near)[:8]}")
             shot("bigdamage")
+        # 크리퍼(자폭)가 450 안이면 반대쪽으로 1.2초 달리고 구르기(10-25: 크리퍼 3마리 옆에서 104→53, 이어 사망)
+        try:
+            me = bot.r.loc(bot.r.player)
+            for o, n in list(bot.r.mobs.items()):
+                if "Creeper" not in n:
+                    continue
+                cp = bot.r.loc(o)
+                if math.dist(cp[:2], me[:2]) < 450 and now - hpwatch.get("flee", 0) > 1.5:
+                    hpwatch["flee"] = now
+                    dx, dy = me[0] - cp[0], me[1] - cp[1]
+                    log(f"  [회피] 크리퍼 {math.dist(cp[:2], me[:2]):.0f} → 반대로 피함")
+                    pad.stick(*bot.to_stick(dx, dy))
+                    pad.tap("LEFT_SHOULDER")   # 구르기(LB)
+                    time.sleep(1.2)
+                    pad.stick(0, 0)
+                    break
+        except Exception:
+            pass
         if hpm and hp / hpm < 0.4 and now - hpwatch["pot"] > 30 and \
                 (bot.r.attr(bot.r.player, "ATR_Health", "HealthPotionCharges") or 0) >= 1:
             pad.trigger(left=True)
@@ -697,7 +715,10 @@ def main():
             if gp:
                 # 문을 끼고 가는 구간은 내 길찾기(점프 연결로 문 옆 기둥 위에 올라감, 10-25 두 번) 대신 문 축 세 점을 직접 찍음
                 log(f"      (문 통과: {[tuple(round(v) for v in q) for q in gp]})")
-                res, sec = walk_guide([me] + gp + [tgt], 0, 99999)
+                r0, s0 = walk(gp[0], 45)   # 문 앞까지는 길찾기로 돌아감(10-25: 문 동쪽에서 직선이 노점·울타리에 막혀 100초씩)
+                res, sec = walk_guide([gp[0]] + gp[1:] + [tgt], 0, 99999)
+                sec += s0
+                log(f"      (문 앞까지 {r0}, 통과 {res})")
             else:
                 res, sec = walk(tgt, 30 + min(acc, total) / 200)
             if res in ("failed", "timeout"):
