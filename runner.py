@@ -306,6 +306,7 @@ def main():
                     stopped = ac or "패드 켜짐"
                     subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
                     print(f"[자동 실행] {stopped} → 봇을 멈췄어", flush=True)
+                    status(f"멈춤: {bat} - {stopped}")   # 왜 끊겼는지 밖에서 보이게(10-25 3분 만에 이유 없이 끊김)
                     break
             names = [os.path.basename(p) for p in glob.glob(os.path.join(glob.escape(HERE), "*.txt")) +
                      glob.glob(os.path.join(glob.escape(HERE), "*.jsonl")) + glob.glob(os.path.join(glob.escape(HERE), "snaps_*.zip"))
