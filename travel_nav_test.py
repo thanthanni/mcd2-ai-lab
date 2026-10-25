@@ -634,6 +634,24 @@ def main():
                 return (tgt[0] - dy / L * 250 * side, tgt[1] + dx / L * 250 * side, tgt[2])
         return tgt
 
+    def stick_through(points, per_point=6.0):
+        """패드 스틱으로 점들을 차례로 걸어감(클릭은 화면에서 가장 위의 면 = 문 지붕·기둥 꼭대기를 목적지로 잡음, 10-25)."""
+        for q in points:
+            ts = time.time()
+            while time.time() - ts < per_point and time.time() < run_deadline:
+                modal_guard()
+                if survive():
+                    pad.stick(0, 0)
+                    return "died"
+                me = bot.r.loc(bot.r.player)
+                if math.dist(me[:2], q[:2]) < 120:
+                    break
+                pad.stick(*bot.to_stick(q[0] - me[0], q[1] - me[1]))
+                time.sleep(0.1)
+        pad.stick(0, 0)
+        me = bot.r.loc(bot.r.player)
+        return "arrived" if math.dist(me[:2], points[-1][:2]) < 300 else "partial"
+
     def walk_guide(pts, j0, dist_limit):
         """안내선 점을 차례로 클릭(점당 최대 8초, 150 안이면 다음 점). 2초 동안 100도 못 움직이면 점프 한 번."""
         t0 = time.time()
@@ -711,14 +729,24 @@ def main():
                     break
             total = sum(math.dist(a[:2], b[:2]) for a, b in zip(pts, pts[1:]))
             log(f"  [{k}] 안내선 {kind} {len(pts)}점 길이 {total:.0f}, 끝 {tuple(round(v) for v in pts[-1])} → 목표 {tuple(round(v) for v in tgt)}")
+            g_near = gates_near(me, 1200)
+            if g_near and me[2] > g_near[0][0][2] + 80:
+                g, yaw = g_near[0]
+                fx, fy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+                if fx * (tgt[0] - me[0]) + fy * (tgt[1] - me[1]) < 0:
+                    fx, fy = -fx, -fy
+                log(f"      (문 옆 높은 곳 z{me[2]:.0f} → 스틱으로 내려오기)")
+                stick_through([(me[0] + fx * 700, me[1] + fy * 700, g[2])], per_point=5)
+                me = bot.r.loc(bot.r.player)
             gp = via_gate(me, tgt)
             if gp:
                 # 문을 끼고 가는 구간은 내 길찾기(점프 연결로 문 옆 기둥 위에 올라감, 10-25 두 번) 대신 문 축 세 점을 직접 찍음
                 log(f"      (문 통과: {[tuple(round(v) for v in q) for q in gp]})")
+                t_g = time.time()
                 r0, s0 = walk(gp[0], 45)   # 문 앞까지는 길찾기로 돌아감(10-25: 문 동쪽에서 직선이 노점·울타리에 막혀 100초씩)
-                res, sec = walk_guide([gp[0]] + gp[1:] + [tgt], 0, 99999)
-                sec += s0
-                log(f"      (문 앞까지 {r0}, 통과 {res})")
+                r1 = stick_through(gp[1:])  # 문 안쪽은 스틱으로(클릭하면 기둥 위로 올라감)
+                res, sec = r1, time.time() - t_g
+                log(f"      (문 앞까지 {r0}, 스틱 통과 {r1})")
             else:
                 res, sec = walk(tgt, 30 + min(acc, total) / 200)
             if res in ("failed", "timeout"):
