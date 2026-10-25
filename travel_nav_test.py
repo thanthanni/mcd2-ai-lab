@@ -513,6 +513,46 @@ def main():
         return []
 
     stuck_n = [0]
+    DEATH_SPOT = (14300, 98200, 200)   # 10-25 두 번 연속 한 번에 죽은 자리
+
+    def survey_volumes(me, radius=4500):
+        """빠지면 죽는 곳 찾기: 이름·클래스에 Volume/Kill/Death/Pain/Water/Ocean/Fall이 든 액터의 위치·크기·관련 속성."""
+        keys = ("volume", "kill", "death", "pain", "water", "ocean", "fall", "void", "drown", "damage")
+        rows, t0 = [], time.time()
+        for o in ue.iter_objects():
+            if time.time() - t0 > 40:
+                break
+            try:
+                c = ue.clsname(o)
+                n = ue.objname(o)
+                low = (c + " " + n).lower()
+                if not any(k in low for k in keys) or n.startswith("Default__") or "SpawnVolume" in c:
+                    continue
+                p = bot.r.loc(o)
+                d = math.dist(p[:2], me[:2])
+                if d > radius:
+                    continue
+                info = ""
+                try:
+                    rc = ue.q(o + bot.r._off(o, "RootComponent"))
+                    sc = struct.unpack("<ddd", ue.read(rc + bot.r._off(rc, "RelativeScale3D"), 24))
+                    info += f" 크기{tuple(round(v, 1) for v in sc)}"
+                except Exception:
+                    pass
+                pr = ue.oprops(o)
+                for k in ("bPainCausing", "DamagePerSec", "bWaterVolume", "KillZ", "bEntryPain"):
+                    if k in pr:
+                        q = pr[k]
+                        v = ue.f32(o + q.offset) if q.kind == "FloatProperty" else ue.read(o + q.offset, 1).hex()
+                        info += f" {k}={v}"
+                rows.append((d, c, n, p, info))
+            except Exception:
+                continue
+        rows.sort(key=lambda x: x[0])
+        log(f"  [조사] 죽은 자리 근처 구역 {len(rows)}개 (내 위치 {tuple(round(v) for v in me)}):")
+        for d, c, n, p, info in rows[:40]:
+            log(f"    {d:6.0f} {c} {n[:60]} {tuple(round(v) for v in p)}{info}")
+        shot("deathzone_survey")
     hpwatch = {"hist": [], "shot": 0.0, "pot": 0.0}
 
     def survive():
@@ -526,7 +566,17 @@ def main():
             return False
         now = time.time()
         if hp <= 0:
+            if now - hpwatch.get("dshot", 0) > 20:
+                hpwatch["dshot"] = now
+                log(f"  [사망] 위치 {tuple(round(v) for v in bot.r.loc(bot.r.player))}")
+                shot("died")
             return True
+        if not hpwatch.get("surveyed"):
+            me = bot.r.loc(bot.r.player)
+            if math.dist(me[:2], DEATH_SPOT[:2]) < 2500:   # 두 번 죽은 자리 근처: 멈춰서 주변 구역 조사 한 번
+                hpwatch["surveyed"] = True
+                pad.stick(0, 0)
+                survey_volumes(me)
         h = hpwatch["hist"]
         h.append((now, hp))
         while h and now - h[0][0] > 3:
